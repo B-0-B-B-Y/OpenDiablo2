@@ -1,20 +1,24 @@
+// Package d2tcpclientconnection provides a TCP protocol implementation of a client connection
 package d2tcpclientconnection
 
 import (
 	"encoding/json"
-	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
-	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
 	"net"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
+	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
 )
 
+// TCPClientConnection represents a client connection over TCP
 type TCPClientConnection struct {
 	id            string
 	tcpConnection net.Conn
-	playerState   *d2player.PlayerState
+	playerState   *d2hero.HeroState
 }
 
+// CreateTCPClientConnection creates a new tcp client connection instance
 func CreateTCPClientConnection(tcpConnection net.Conn, id string) *TCPClientConnection {
 	return &TCPClientConnection{
 		tcpConnection: tcpConnection,
@@ -22,10 +26,12 @@ func CreateTCPClientConnection(tcpConnection net.Conn, id string) *TCPClientConn
 	}
 }
 
+// GetUniqueID returns the unique ID for the tcp client connection
 func (t TCPClientConnection) GetUniqueID() string {
 	return t.id
 }
 
+// SendPacketToClient marshals and sends (writes) NetPackets
 func (t *TCPClientConnection) SendPacketToClient(p d2netpacket.NetPacket) error {
 	packet, err := json.Marshal(p)
 	if err != nil {
@@ -40,11 +46,13 @@ func (t *TCPClientConnection) SendPacketToClient(p d2netpacket.NetPacket) error 
 	return nil
 }
 
-func (t *TCPClientConnection) SetPlayerState(playerState *d2player.PlayerState) {
+// SetPlayerState sets the game client player state
+func (t *TCPClientConnection) SetPlayerState(playerState *d2hero.HeroState) {
 	t.playerState = playerState
 }
 
-func (t *TCPClientConnection) GetPlayerState() *d2player.PlayerState {
+// GetPlayerState gets the game client player state
+func (t *TCPClientConnection) GetPlayerState() *d2hero.HeroState {
 	return t.playerState
 }
 

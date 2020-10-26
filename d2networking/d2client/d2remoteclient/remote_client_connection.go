@@ -7,9 +7,10 @@ import (
 	"net"
 	"strings"
 
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
@@ -19,6 +20,8 @@ import (
 // RemoteClientConnection is the implementation of ClientConnection
 // for a remote client.
 type RemoteClientConnection struct {
+	asset          *d2asset.AssetManager
+	heroState      *d2hero.HeroStateFactory
 	clientListener d2networking.ClientListener // The GameClient
 	uniqueID       string                      // Unique ID generated on construction
 	tcpConnection  *net.TCPConn                // UDP connection to the server
@@ -27,12 +30,19 @@ type RemoteClientConnection struct {
 
 // Create constructs a new RemoteClientConnection
 // and returns a pointer to it.
-func Create() *RemoteClientConnection {
-	result := &RemoteClientConnection{
-		uniqueID: uuid.NewV4().String(),
+func Create(asset *d2asset.AssetManager) (*RemoteClientConnection, error) {
+	heroStateFactory, err := d2hero.NewHeroStateFactory(asset)
+	if err != nil {
+		return nil, err
 	}
 
-	return result
+	result := &RemoteClientConnection{
+		asset:     asset,
+		heroState: heroStateFactory,
+		uniqueID:  uuid.New().String(),
+	}
+
+	return result, nil
 }
 
 // Open runs serverListener() in a goroutine to continuously read UDP packets.
@@ -42,16 +52,13 @@ func (r *RemoteClientConnection) Open(connectionString, saveFilePath string) err
 		connectionString += ":6669"
 	}
 
-	// TODO: Connect to the server
 	tcpAddress, err := net.ResolveTCPAddr("tcp", connectionString)
 
-	// TODO: Show connection error screen if connection fails
 	if err != nil {
 		return err
 	}
 
 	r.tcpConnection, err = net.DialTCP("tcp", nil, tcpAddress)
-	// TODO: Show connection error screen if connection fails
 	if err != nil {
 		return err
 	}
@@ -61,7 +68,7 @@ func (r *RemoteClientConnection) Open(connectionString, saveFilePath string) err
 
 	log.Printf("Connected to server at %s", r.tcpConnection.RemoteAddr().String())
 
-	gameState := d2player.LoadPlayerState(saveFilePath)
+	gameState := r.heroState.LoadHeroState(saveFilePath)
 	packet := d2netpacket.CreatePlayerConnectionRequestPacket(r.GetUniqueID(), gameState)
 	err = r.SendPacketToServer(packet)
 
@@ -121,10 +128,15 @@ func (r *RemoteClientConnection) SendPacketToServer(packet d2netpacket.NetPacket
 // connection.
 func (r *RemoteClientConnection) serverListener() {
 	var packet d2netpacket.NetPacket
+
 	decoder := json.NewDecoder(r.tcpConnection)
 
 	for {
 		err := decoder.Decode(&packet)
+		if err != nil {
+			log.Printf("failed to decode the packet, err: %v\n", err)
+			return
+		}
 
 		p, err := r.decodeToPacket(packet.PacketType, string(packet.PacketData))
 		if err != nil {
@@ -139,6 +151,7 @@ func (r *RemoteClientConnection) serverListener() {
 }
 
 // bytesToJSON reads the packet type, decompresses the packet and returns a JSON string.
+// nolint:unused // WIP
 func (r *RemoteClientConnection) bytesToJSON(buffer []byte) (string, d2netpackettype.NetPacketType, error) {
 	packet, err := d2netpacket.UnmarshalNetPacket(buffer)
 	if err != nil {
@@ -182,6 +195,14 @@ func (r *RemoteClientConnection) decodeToPacket(t d2netpackettype.NetPacketType,
 
 	case d2netpackettype.AddPlayer:
 		var p d2netpacket.AddPlayerPacket
+		if err = json.Unmarshal([]byte(data), &p); err != nil {
+			break
+		}
+
+		np = d2netpacket.NetPacket{PacketType: t, PacketData: d2netpacket.MarshalPacket(p)}
+
+	case d2netpackettype.CastSkill:
+		var p d2netpacket.CastPacket
 		if err = json.Unmarshal([]byte(data), &p); err != nil {
 			break
 		}

@@ -2,17 +2,22 @@ package d2client
 
 import (
 	"fmt"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
 	"log"
 	"os"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2data/d2datadict"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
-	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2localclient"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2remoteclient"
@@ -30,9 +35,11 @@ const (
 type GameClient struct {
 	clientConnection ServerConnection                            // Abstract local/remote connection
 	connectionType   d2clientconnectiontype.ClientConnectionType // Type of connection (local or remote)
+	asset            *d2asset.AssetManager
 	scriptEngine     *d2script.ScriptEngine
-	GameState        *d2player.PlayerState          // local player state
+	GameState        *d2hero.HeroState              // local player state
 	MapEngine        *d2mapengine.MapEngine         // Map and entities
+	mapGen           *d2mapgen.MapGenerator         // map generator
 	PlayerID         string                         // ID of the local player
 	Players          map[string]*d2mapentity.Player // IDs of the other players
 	Seed             int64                          // Map seed
@@ -40,23 +47,40 @@ type GameClient struct {
 }
 
 // Create constructs a new GameClient and returns a pointer to it.
-func Create(connectionType d2clientconnectiontype.ClientConnectionType, scriptEngine *d2script.ScriptEngine) (*GameClient, error) {
+func Create(connectionType d2clientconnectiontype.ClientConnectionType,
+	asset *d2asset.AssetManager, scriptEngine *d2script.ScriptEngine) (*GameClient, error) {
 	result := &GameClient{
-		MapEngine:      d2mapengine.CreateMapEngine(), // TODO: Mapgen - Needs levels.txt stuff
+		asset:          asset,
+		MapEngine:      d2mapengine.CreateMapEngine(asset),
 		Players:        make(map[string]*d2mapentity.Player),
 		connectionType: connectionType,
 		scriptEngine:   scriptEngine,
 	}
 
+	// for a remote client connection, set loading to true - wait until we process the GenerateMapPacket
+	// before we start updating map entites
+	result.MapEngine.IsLoading = connectionType == d2clientconnectiontype.LANClient
+
+	mapGen, err := d2mapgen.NewMapGenerator(asset, result.MapEngine)
+	if err != nil {
+		return nil, err
+	}
+
+	result.mapGen = mapGen
+
 	switch connectionType {
 	case d2clientconnectiontype.LANClient:
-		result.clientConnection = d2remoteclient.Create()
+		result.clientConnection, err = d2remoteclient.Create(asset)
 	case d2clientconnectiontype.LANServer:
-		result.clientConnection = d2localclient.Create(true)
+		result.clientConnection, err = d2localclient.Create(asset, true)
 	case d2clientconnectiontype.Local:
-		result.clientConnection = d2localclient.Create(false)
+		result.clientConnection, err = d2localclient.Create(asset, false)
 	default:
-		return nil, fmt.Errorf("unknown client connection type specified: %d", connectionType)
+		err = fmt.Errorf("unknown client connection type specified: %d", connectionType)
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	result.clientConnection.SetClientListener(result)
@@ -128,7 +152,7 @@ func (g *GameClient) OnPacketReceived(packet d2netpacket.NetPacket) error {
 		// Not implemented
 		log.Printf("RemoteClientConnection: received disconnect: %s", packet.PacketData)
 	case d2netpackettype.ServerClosed:
-		// TODO: Need to be tied into a character save and exit
+		// https://github.com/OpenDiablo2/OpenDiablo2/issues/802
 		log.Print("Server has been closed")
 		os.Exit(0)
 	default:
@@ -151,7 +175,7 @@ func (g *GameClient) handleGenerateMapPacket(packet d2netpacket.NetPacket) error
 	}
 
 	if mapData.RegionType == d2enum.RegionAct1Town {
-		d2mapgen.GenerateAct1Overworld(g.MapEngine)
+		g.mapGen.GenerateAct1Overworld()
 	}
 
 	g.RegenMap = true
@@ -179,8 +203,10 @@ func (g *GameClient) handleAddPlayerPacket(packet d2netpacket.NetPacket) error {
 		return err
 	}
 
-	newPlayer := d2mapentity.NewPlayer(player.ID, player.Name, player.X, player.Y, 0,
-		player.HeroType, player.Stats, &player.Equipment)
+	d2hero.HydrateSkills(player.Skills, g.asset)
+
+	newPlayer := g.MapEngine.NewPlayer(player.ID, player.Name, player.X, player.Y, 0,
+		player.HeroType, player.Stats, player.Skills, &player.Equipment)
 
 	g.Players[newPlayer.ID()] = newPlayer
 	g.MapEngine.AddEntity(newPlayer)
@@ -194,7 +220,7 @@ func (g *GameClient) handleSpawnItemPacket(packet d2netpacket.NetPacket) error {
 		return err
 	}
 
-	itemEntity, err := d2mapentity.NewItem(item.X, item.Y, item.Codes...)
+	itemEntity, err := g.MapEngine.NewItem(item.X, item.Y, item.Codes...)
 
 	if err == nil {
 		g.MapEngine.AddEntity(itemEntity)
@@ -223,12 +249,7 @@ func (g *GameClient) handleMovePlayerPacket(packet d2netpacket.NetPacket) error 
 				return
 			}
 
-			regionType := tile.RegionType
-			if regionType == d2enum.RegionAct1Town {
-				player.SetIsInTown(true)
-			} else {
-				player.SetIsInTown(false)
-			}
+			player.SetIsInTown(tile.RegionType == d2enum.RegionAct1Town)
 
 			err := player.SetAnimationMode(player.GetAnimationMode())
 
@@ -249,33 +270,149 @@ func (g *GameClient) handleCastSkillPacket(packet d2netpacket.NetPacket) error {
 	}
 
 	player := g.Players[playerCast.SourceEntityID]
+	player.StopMoving()
 
-	player.SetCasting()
-	player.ClearPath()
+	castX := playerCast.TargetX * numSubtilesPerTile
+	castY := playerCast.TargetY * numSubtilesPerTile
 
-	// currently hardcoded to missile skill
-	missile, err := d2mapentity.NewMissile(
-		int(player.Position.X()),
-		int(player.Position.Y()),
-		d2datadict.Missiles[playerCast.SkillID],
-	)
+	direction := player.Position.DirectionTo(*d2vector.NewVector(castX, castY))
+	player.SetDirection(direction)
 
+	skillRecord := g.asset.Records.Skill.Details[playerCast.SkillID]
+
+	missileEntities, err := g.createMissileEntities(skillRecord, player, castX, castY)
 	if err != nil {
 		return err
 	}
 
-	rads := d2math.GetRadiansBetween(
-		player.Position.X(),
-		player.Position.Y(),
-		playerCast.TargetX*numSubtilesPerTile,
-		playerCast.TargetY*numSubtilesPerTile,
-	)
+	var summonedNpcEntity *d2mapentity.NPC
+	if skillRecord.Summon != "" {
+		summonedNpcEntity, err = g.createSummonedNpcEntity(skillRecord, int(castX), int(castY))
 
-	missile.SetRadians(rads, func() {
-		g.MapEngine.RemoveEntity(missile)
+		if err != nil {
+			return err
+		}
+	}
+
+	player.StartCasting(skillRecord.Anim, func() {
+		if len(missileEntities) > 0 {
+			// shoot the missiles of the skill after the player has finished casting
+			for _, missileEntity := range missileEntities {
+				g.MapEngine.AddEntity(missileEntity)
+			}
+		}
+
+		if summonedNpcEntity != nil {
+			// summon the referenced NPC after the player has finished casting
+			g.MapEngine.AddEntity(summonedNpcEntity)
+		}
 	})
 
-	g.MapEngine.AddEntity(missile)
+	overlayRecord := g.asset.Records.Layout.Overlays[skillRecord.Castoverlay]
+
+	return g.playCastOverlay(overlayRecord, int(player.Position.X()), int(player.Position.Y()))
+}
+
+func (g *GameClient) createSummonedNpcEntity(skillRecord *d2records.SkillRecord, x, y int) (*d2mapentity.NPC, error) {
+	monsterStatsRecord := g.asset.Records.Monster.Stats[skillRecord.Summon]
+
+	if monsterStatsRecord == nil {
+		fmtErr := "cannot cast skill - No monstat entry for \"%s\""
+		return nil, fmt.Errorf(fmtErr, skillRecord.Summon)
+	}
+
+	// https://github.com/OpenDiablo2/OpenDiablo2/issues/803
+	summonedNpcEntity, err := g.MapEngine.NewNPC(x, y, monsterStatsRecord, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	return summonedNpcEntity, nil
+}
+
+func (g *GameClient) createMissileEntities(
+	skillRecord *d2records.SkillRecord,
+	player *d2mapentity.Player,
+	castX, castY float64,
+) ([]*d2mapentity.Missile, error) {
+	missileRecords := []*d2records.MissileRecord{
+		g.asset.Records.GetMissileByName(skillRecord.Cltmissile),
+		g.asset.Records.GetMissileByName(skillRecord.Cltmissilea),
+		g.asset.Records.GetMissileByName(skillRecord.Cltmissileb),
+		g.asset.Records.GetMissileByName(skillRecord.Cltmissilec),
+		g.asset.Records.GetMissileByName(skillRecord.Cltmissiled),
+	}
+
+	missileEntities := make([]*d2mapentity.Missile, 0)
+
+	for _, missileRecord := range missileRecords {
+		if missileRecord == nil {
+			continue
+		}
+
+		missileEntity, err := g.createMissileEntity(missileRecord, player, castX, castY)
+		if err != nil {
+			return nil, err
+		}
+
+		missileEntities = append(missileEntities, missileEntity)
+	}
+
+	return missileEntities, nil
+}
+
+func (g *GameClient) createMissileEntity(
+	missileRecord *d2records.MissileRecord,
+	player *d2mapentity.Player,
+	castX, castY float64,
+) (*d2mapentity.Missile, error) {
+	if missileRecord == nil {
+		return nil, nil
+	}
+
+	radians := d2math.GetRadiansBetween(
+		player.Position.X(),
+		player.Position.Y(),
+		castX,
+		castY,
+	)
+
+	missileEntity, err := g.MapEngine.NewMissile(
+		int(player.Position.X()),
+		int(player.Position.Y()),
+		g.asset.Records.Missiles[missileRecord.Id],
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	missileEntity.SetRadians(radians, func() {
+		g.MapEngine.RemoveEntity(missileEntity)
+	})
+
+	return missileEntity, nil
+}
+
+func (g *GameClient) playCastOverlay(overlayRecord *d2records.OverlayRecord, x, y int) error {
+	if overlayRecord == nil {
+		return nil
+	}
+
+	overlayEntity, err := g.MapEngine.NewCastOverlay(
+		x,
+		y,
+		overlayRecord,
+	)
+	if err != nil {
+		return err
+	}
+
+	overlayEntity.SetOnDoneFunc(func() {
+		g.MapEngine.RemoveEntity(overlayEntity)
+	})
+
+	g.MapEngine.AddEntity(overlayEntity)
 
 	return nil
 }
@@ -289,4 +426,9 @@ func (g *GameClient) handlePingPacket() error {
 	}
 
 	return nil
+}
+
+// IsSinglePlayer returns a bool for whether the game is a single-player game
+func (g *GameClient) IsSinglePlayer() bool {
+	return g.connectionType == d2clientconnectiontype.Local
 }

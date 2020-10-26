@@ -4,36 +4,55 @@ import (
 	"log"
 	"strings"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2dt1"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
-
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapstamp"
-
-	"github.com/OpenDiablo2/OpenDiablo2/d2common"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2data/d2datadict"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2ds1"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2dt1"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2geom"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapstamp"
 )
 
 // MapEngine loads the tiles which make up the isometric map and the entities
 type MapEngine struct {
+	asset *d2asset.AssetManager
+	*d2mapstamp.StampFactory
+	*d2mapentity.MapEntityFactory
 	seed          int64                            // The map seed
 	entities      map[string]d2interface.MapEntity // Entities on the map
 	tiles         []MapTile
-	size          d2common.Size              // Size of the map, in tiles
-	levelType     d2datadict.LevelTypeRecord // Level type of this map
-	dt1TileData   []d2dt1.Tile               // DT1 tile data
-	startSubTileX int                        // Starting X position
-	startSubTileY int                        // Starting Y position
-	dt1Files      []string                   // List of DS1 strings
+	size          d2geom.Size               // Size of the map, in tiles
+	levelType     d2records.LevelTypeRecord // Level type of this map
+	dt1TileData   []d2dt1.Tile              // DT1 tile data
+	startSubTileX int                       // Starting X position
+	startSubTileY int                       // Starting Y position
+	dt1Files      []string                  // List of DS1 strings
+
+	// https://github.com/OpenDiablo2/OpenDiablo2/issues/789
+	IsLoading bool // (temp) Whether we have processed the GenerateMapPacket(only for remote client)
 }
 
+const (
+	subtilesPerTile = 5
+)
+
 // CreateMapEngine creates a new instance of the map engine and returns a pointer to it.
-func CreateMapEngine() *MapEngine {
-	engine := &MapEngine{}
+func CreateMapEngine(asset *d2asset.AssetManager) *MapEngine {
+	entity, _ := d2mapentity.NewMapEntityFactory(asset)
+	stamp := d2mapstamp.NewStampFactory(asset, entity)
+
+	engine := &MapEngine{
+		asset:            asset,
+		MapEntityFactory: entity,
+		StampFactory:     stamp,
+		// This will be set to true when we are using a remote client connection, and then set to false after we process the GenerateMapPacket
+		IsLoading: false,
+	}
+
 	return engine
 }
 
@@ -45,8 +64,8 @@ func (m *MapEngine) GetStartingPosition() (x, y int) {
 // ResetMap clears all map and entity data and reloads it from the cached files.
 func (m *MapEngine) ResetMap(levelType d2enum.RegionIdType, width, height int) {
 	m.entities = make(map[string]d2interface.MapEntity)
-	m.levelType = d2datadict.LevelTypes[levelType]
-	m.size = d2common.Size{Width: width, Height: height}
+	m.levelType = *m.asset.Records.Level.Types[levelType]
+	m.size = d2geom.Size{Width: width, Height: height}
 	m.tiles = make([]MapTile, width*height)
 	m.dt1TileData = make([]d2dt1.Tile, 0)
 	m.dt1Files = make([]string, 0)
@@ -68,14 +87,18 @@ func (m *MapEngine) addDT1(fileName string) {
 		}
 	}
 
-	fileData, err := d2asset.LoadFile("/data/global/tiles/" + fileName)
+	fileData, err := m.asset.LoadFile("/data/global/tiles/" + fileName)
 	if err != nil {
 		log.Printf("Could not load /data/global/tiles/%s", fileName)
 		// panic(err)
 		return
 	}
 
-	dt1, _ := d2dt1.LoadDT1(fileData)
+	dt1, err := d2dt1.LoadDT1(fileData)
+	if err != nil {
+		log.Print(err)
+	}
+
 	m.dt1TileData = append(m.dt1TileData, dt1.Tiles...)
 	m.dt1Files = append(m.dt1Files, fileName)
 }
@@ -88,12 +111,15 @@ func (m *MapEngine) AddDS1(fileName string) {
 		return
 	}
 
-	fileData, err := d2asset.LoadFile("/data/global/tiles/" + fileName)
+	fileData, err := m.asset.LoadFile("/data/global/tiles/" + fileName)
 	if err != nil {
 		panic(err)
 	}
 
-	ds1, _ := d2ds1.LoadDS1(fileData)
+	ds1, err := d2ds1.LoadDS1(fileData)
+	if err != nil {
+		log.Print(err)
+	}
 
 	for idx := range ds1.Files {
 		dt1File := ds1.Files[idx]
@@ -106,7 +132,7 @@ func (m *MapEngine) AddDS1(fileName string) {
 }
 
 // LevelType returns the level type of this map.
-func (m *MapEngine) LevelType() d2datadict.LevelTypeRecord {
+func (m *MapEngine) LevelType() d2records.LevelTypeRecord {
 	return m.levelType
 }
 
@@ -117,7 +143,7 @@ func (m *MapEngine) SetSeed(seed int64) {
 }
 
 // Size returns the size of the map in sub-tiles.
-func (m *MapEngine) Size() d2common.Size {
+func (m *MapEngine) Size() d2geom.Size {
 	return m.size
 }
 
@@ -176,16 +202,11 @@ func (m *MapEngine) tileCoordinateToIndex(x, y int) int {
 	return x + (y * m.size.Width)
 }
 
-// tileIndexToCoordinate converts tile index from MapEngine.tiles to x,y coordinate
-func (m *MapEngine) tileIndexToCoordinate(index int) (x, y int) {
-	return index % m.size.Width, index / m.size.Width
-}
-
 // SubTileAt gets the flags for the given subtile
 func (m *MapEngine) SubTileAt(subX, subY int) *d2dt1.SubTileFlags {
-	tile := m.TileAt(subX/5, subY/5)
+	tile := m.TileAt(subX/subtilesPerTile, subY/subtilesPerTile)
 
-	return tile.GetSubTileFlags(subX%5, subY%5)
+	return tile.GetSubTileFlags(subX%subtilesPerTile, subY%subtilesPerTile)
 }
 
 // TileAt returns a pointer to the data for the map tile at the given
@@ -225,7 +246,7 @@ func (m *MapEngine) RemoveEntity(entity d2interface.MapEntity) {
 
 // GetTiles returns a slice of all tiles matching the given style,
 // sequence and tileType.
-func (m *MapEngine) GetTiles(style, sequence, tileType int) []d2dt1.Tile {
+func (m *MapEngine) GetTiles(style, sequence int, tileType d2enum.TileType) []d2dt1.Tile {
 	tiles := make([]d2dt1.Tile, 0, len(m.dt1TileData))
 
 	for idx := range m.dt1TileData {
@@ -269,6 +290,11 @@ func (m *MapEngine) GetCenterPosition() (x, y float64) {
 // Advance calls the Advance() method for all entities,
 // processing a single tick.
 func (m *MapEngine) Advance(tickTime float64) {
+	if m.IsLoading {
+		// https://github.com/OpenDiablo2/OpenDiablo2/issues/789
+		return
+	}
+
 	for ID := range m.entities {
 		m.entities[ID].Advance(tickTime)
 	}
@@ -293,7 +319,7 @@ func (m *MapEngine) TileExists(tileX, tileY int) bool {
 
 // GenerateMap clears the map and places the specified stamp.
 func (m *MapEngine) GenerateMap(regionType d2enum.RegionIdType, levelPreset, fileIndex int) {
-	region := d2mapstamp.LoadStamp(regionType, levelPreset, fileIndex)
+	region := m.LoadStamp(regionType, levelPreset, fileIndex)
 	regionSize := region.Size()
 	m.ResetMap(regionType, regionSize.Width, regionSize.Height)
 	m.PlaceStamp(region, 0, 0)

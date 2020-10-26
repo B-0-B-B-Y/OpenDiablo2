@@ -2,6 +2,8 @@ package d2netpacket
 
 import (
 	"encoding/json"
+	"log"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2inventory"
@@ -19,12 +21,13 @@ type AddPlayerPacket struct {
 	HeroType  d2enum.Hero                    `json:"hero"`
 	Equipment d2inventory.CharacterEquipment `json:"equipment"`
 	Stats     *d2hero.HeroStatsState         `json:"heroStats"`
+	Skills    map[int]*d2hero.HeroSkill      `json:"heroSkills"`
 }
 
 // CreateAddPlayerPacket returns a NetPacket which declares an
 // AddPlayerPacket with the data in given parameters.
 func CreateAddPlayerPacket(id, name string, x, y int, heroType d2enum.Hero,
-	stats *d2hero.HeroStatsState, equipment d2inventory.CharacterEquipment) NetPacket {
+	stats *d2hero.HeroStatsState, skills map[int]*d2hero.HeroSkill, equipment d2inventory.CharacterEquipment) NetPacket {
 	addPlayerPacket := AddPlayerPacket{
 		ID:        id,
 		Name:      name,
@@ -33,8 +36,13 @@ func CreateAddPlayerPacket(id, name string, x, y int, heroType d2enum.Hero,
 		HeroType:  heroType,
 		Equipment: equipment,
 		Stats:     stats,
+		Skills:    skills,
 	}
-	b, _ := json.Marshal(addPlayerPacket)
+
+	b, err := json.Marshal(addPlayerPacket)
+	if err != nil {
+		log.Print(err)
+	}
 
 	return NetPacket{
 		PacketType: d2netpackettype.AddPlayer,
@@ -42,6 +50,7 @@ func CreateAddPlayerPacket(id, name string, x, y int, heroType d2enum.Hero,
 	}
 }
 
+// UnmarshalAddPlayer unmarshals the packet data into an AddPlayerPacket struct
 func UnmarshalAddPlayer(packet []byte) (AddPlayerPacket, error) {
 	var p AddPlayerPacket
 	if err := json.Unmarshal(packet, &p); err != nil {

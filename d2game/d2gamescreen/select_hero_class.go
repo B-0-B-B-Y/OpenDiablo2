@@ -3,18 +3,26 @@ package d2gamescreen
 import (
 	"fmt"
 	"image"
+	"log"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2data/d2datadict"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2inventory"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2tbl"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
-	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
+)
+
+const (
+	millisecondsPerSecond = 1000.0
 )
 
 type heroRenderConfig struct {
@@ -267,17 +275,20 @@ func (hri *HeroRenderInfo) advance(elapsed float64) {
 
 // SelectHeroClass represents the Select Hero Class screen
 type SelectHeroClass struct {
-	uiManager          *d2ui.UIManager
-	bgImage            *d2ui.Sprite
-	campfire           *d2ui.Sprite
-	headingLabel       *d2ui.Label
-	heroClassLabel     *d2ui.Label
-	heroDesc1Label     *d2ui.Label
-	heroDesc2Label     *d2ui.Label
-	heroDesc3Label     *d2ui.Label
-	heroNameTextbox    *d2ui.TextBox
-	heroNameLabel      *d2ui.Label
-	heroRenderInfo     map[d2enum.Hero]*HeroRenderInfo
+	asset           *d2asset.AssetManager
+	uiManager       *d2ui.UIManager
+	bgImage         *d2ui.Sprite
+	campfire        *d2ui.Sprite
+	headingLabel    *d2ui.Label
+	heroClassLabel  *d2ui.Label
+	heroDesc1Label  *d2ui.Label
+	heroDesc2Label  *d2ui.Label
+	heroDesc3Label  *d2ui.Label
+	heroNameTextbox *d2ui.TextBox
+	heroNameLabel   *d2ui.Label
+	heroRenderInfo  map[d2enum.Hero]*HeroRenderInfo
+	*d2inventory.InventoryItemFactory
+	*d2hero.HeroStateFactory
 	selectedHero       d2enum.Hero
 	exitButton         *d2ui.Button
 	okButton           *d2ui.Button
@@ -290,30 +301,44 @@ type SelectHeroClass struct {
 
 	audioProvider d2interface.AudioProvider
 	renderer      d2interface.Renderer
-	navigator     Navigator
+	navigator     d2interface.Navigator
 }
 
 // CreateSelectHeroClass creates an instance of a SelectHeroClass
 func CreateSelectHeroClass(
-	navigator Navigator,
+	navigator d2interface.Navigator,
+	asset *d2asset.AssetManager,
 	renderer d2interface.Renderer,
 	audioProvider d2interface.AudioProvider,
 	ui *d2ui.UIManager,
 	connectionType d2clientconnectiontype.ClientConnectionType,
 	connectionHost string,
-) *SelectHeroClass {
-	result := &SelectHeroClass{
-		heroRenderInfo: make(map[d2enum.Hero]*HeroRenderInfo),
-		selectedHero:   d2enum.HeroNone,
-		connectionType: connectionType,
-		connectionHost: connectionHost,
-		audioProvider:  audioProvider,
-		renderer:       renderer,
-		navigator:      navigator,
-		uiManager:      ui,
+) (*SelectHeroClass, error) {
+	playerStateFactory, err := d2hero.NewHeroStateFactory(asset)
+	if err != nil {
+		return nil, err
 	}
 
-	return result
+	inventoryItemFactory, err := d2inventory.NewInventoryItemFactory(asset)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &SelectHeroClass{
+		asset:                asset,
+		heroRenderInfo:       make(map[d2enum.Hero]*HeroRenderInfo),
+		selectedHero:         d2enum.HeroNone,
+		connectionType:       connectionType,
+		connectionHost:       connectionHost,
+		audioProvider:        audioProvider,
+		renderer:             renderer,
+		navigator:            navigator,
+		uiManager:            ui,
+		HeroStateFactory:     playerStateFactory,
+		InventoryItemFactory: inventoryItemFactory,
+	}
+
+	return result, nil
 }
 
 // OnLoad loads the resources for the Select Hero Class screen
@@ -465,12 +490,24 @@ func (v *SelectHeroClass) onExitButtonClicked() {
 }
 
 func (v *SelectHeroClass) onOkButtonClicked() {
-	gameState := d2player.CreatePlayerState(
-		v.heroNameTextbox.GetText(),
-		v.selectedHero,
-		d2datadict.CharStats[v.selectedHero],
-	)
-	v.navigator.ToCreateGame(gameState.FilePath, d2clientconnectiontype.Local, v.connectionHost)
+	heroName := v.heroNameTextbox.GetText()
+	defaultStats := v.asset.Records.Character.Stats[v.selectedHero]
+	statsState := v.CreateHeroStatsState(v.selectedHero, defaultStats)
+
+	playerState, err := v.CreateHeroState(heroName, v.selectedHero, statsState)
+	if err != nil {
+		fmt.Printf("failed to create hero state!, err: %v\n", err)
+		return
+	}
+
+	err = v.Save(playerState)
+	if err != nil {
+		fmt.Printf("failed to save game state!, err: %v\n", err)
+		return
+	}
+
+	playerState.Equipment = v.InventoryItemFactory.DefaultHeroItems[v.selectedHero]
+	v.navigator.ToCreateGame(playerState.FilePath, d2clientconnectiontype.Local, v.connectionHost)
 }
 
 // Render renders the Select Hero Class screen
@@ -650,25 +687,25 @@ func (v *SelectHeroClass) updateHeroText() {
 	case d2enum.HeroNone:
 		return
 	case d2enum.HeroBarbarian:
-		v.heroClassLabel.SetText(d2common.TranslateString("partycharbar"))
+		v.heroClassLabel.SetText(d2tbl.TranslateString("partycharbar"))
 		v.setDescLabels("He is unequaled in close-quarters combat and mastery of weapons.")
 	case d2enum.HeroNecromancer:
-		v.heroClassLabel.SetText(d2common.TranslateString("partycharnec"))
+		v.heroClassLabel.SetText(d2tbl.TranslateString("partycharnec"))
 		v.setDescLabels("Summoning undead minions and cursing his enemies are his specialties.")
 	case d2enum.HeroPaladin:
-		v.heroClassLabel.SetText(d2common.TranslateString("partycharpal"))
+		v.heroClassLabel.SetText(d2tbl.TranslateString("partycharpal"))
 		v.setDescLabels("He is a natural party leader, holy man, and blessed warrior.")
 	case d2enum.HeroAssassin:
-		v.heroClassLabel.SetText(d2common.TranslateString("partycharass"))
+		v.heroClassLabel.SetText(d2tbl.TranslateString("partycharass"))
 		v.setDescLabels("Schooled in the Martial Arts, her mind and body are deadly weapons.")
 	case d2enum.HeroSorceress:
-		v.heroClassLabel.SetText(d2common.TranslateString("partycharsor"))
+		v.heroClassLabel.SetText(d2tbl.TranslateString("partycharsor"))
 		v.setDescLabels("She has mastered the elemental magicks -- fire, lightning, and ice.")
 	case d2enum.HeroAmazon:
-		v.heroClassLabel.SetText(d2common.TranslateString("partycharama"))
+		v.heroClassLabel.SetText(d2tbl.TranslateString("partycharama"))
 		v.setDescLabels("Skilled with the spear and the bow, she is a very versatile fighter.")
 	case d2enum.HeroDruid:
-		v.heroClassLabel.SetText(d2common.TranslateString("partychardru"))
+		v.heroClassLabel.SetText(d2tbl.TranslateString("partychardru"))
 		v.setDescLabels("Commanding the forces of nature, he summons wild beasts and raging storms to his side.")
 	}
 }
@@ -679,8 +716,8 @@ const (
 )
 
 func (v *SelectHeroClass) setDescLabels(descKey string) {
-	heroDesc := d2common.TranslateString(descKey)
-	parts := d2common.SplitIntoLinesWithMaxWidth(heroDesc, heroDescCharWidth)
+	heroDesc := d2tbl.TranslateString(descKey)
+	parts := d2util.SplitIntoLinesWithMaxWidth(heroDesc, heroDescCharWidth)
 
 	numLines := len(parts)
 
@@ -730,27 +767,21 @@ func (v *SelectHeroClass) loadSprite(animationPath string, position image.Point,
 		return nil
 	}
 
-	animation, err := d2asset.LoadAnimation(animationPath, d2resource.PaletteFechar)
-	if err != nil {
-		fmt.Printf("could not load animation: %s\n", animationPath)
-		return nil
-	}
-
-	animation.PlayForward()
-	animation.SetPlayLoop(playLoop)
-
-	if blend {
-		animation.SetEffect(d2enum.DrawEffectModulate)
-	}
-
-	if playLength != 0 {
-		animation.SetPlayLengthMs(playLength)
-	}
-
-	sprite, err := v.uiManager.NewSprite(animation)
+	sprite, err := v.uiManager.NewSprite(animationPath, d2resource.PaletteFechar)
 	if err != nil {
 		fmt.Printf("could not load sprite for the animation: %s\n", animationPath)
 		return nil
+	}
+
+	sprite.PlayForward()
+	sprite.SetPlayLoop(playLoop)
+
+	if blend {
+		sprite.SetEffect(d2enum.DrawEffectModulate)
+	}
+
+	if playLength != 0 {
+		sprite.SetPlayLength(float64(playLength) / millisecondsPerSecond)
 	}
 
 	sprite.SetPosition(position.X, position.Y)
@@ -759,6 +790,11 @@ func (v *SelectHeroClass) loadSprite(animationPath string, position image.Point,
 }
 
 func (v *SelectHeroClass) loadSoundEffect(sfx string) d2interface.SoundEffect {
-	result, _ := v.audioProvider.LoadSound(sfx, false, false)
+	result, err := v.audioProvider.LoadSound(sfx, false, false)
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+
 	return result
 }

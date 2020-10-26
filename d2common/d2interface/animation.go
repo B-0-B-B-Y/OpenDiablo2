@@ -9,6 +9,7 @@ import (
 
 // Animation is an animation
 type Animation interface {
+	BindRenderer(Renderer) error
 	Clone() Animation
 	SetSubLoop(startFrame, EndFrame int)
 	Advance(elapsed float64) error
@@ -33,9 +34,9 @@ type Animation interface {
 	SetPlayLoop(loop bool)
 	SetPlaySpeed(playSpeed float64)
 	SetPlayLength(playLength float64)
-	SetPlayLengthMs(playLengthMs int)
 	SetColorMod(colorMod color.Color)
 	GetPlayedCount() int
 	ResetPlayedCount()
 	SetEffect(effect d2enum.DrawEffect)
+	SetShadow(shadow bool)
 }

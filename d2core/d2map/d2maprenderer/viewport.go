@@ -3,7 +3,7 @@ package d2maprenderer
 import (
 	"math"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2geom"
 )
 
 type worldTrans struct {
@@ -20,10 +20,14 @@ const (
 	half       = 2
 )
 
+const (
+	worldToOrthoOffsetX = 3
+)
+
 // Viewport is used for converting vectors between screen (pixel), orthogonal (Camera) and world (isometric) space.
 type Viewport struct {
-	defaultScreenRect d2common.Rectangle
-	screenRect        d2common.Rectangle
+	defaultScreenRect d2geom.Rectangle
+	screenRect        d2geom.Rectangle
 	transStack        []worldTrans
 	transCurrent      worldTrans
 	camera            *Camera
@@ -33,13 +37,13 @@ type Viewport struct {
 // NewViewport creates a new Viewport with the given parameters and returns a pointer to it.
 func NewViewport(x, y, width, height int) *Viewport {
 	return &Viewport{
-		screenRect: d2common.Rectangle{
+		screenRect: d2geom.Rectangle{
 			Left:   x,
 			Top:    y,
 			Width:  width,
 			Height: height,
 		},
-		defaultScreenRect: d2common.Rectangle{
+		defaultScreenRect: d2geom.Rectangle{
 			Left:   x,
 			Top:    y,
 			Width:  width,
@@ -113,14 +117,14 @@ func (v *Viewport) OrthoToScreenF(x, y float64) (screenX, screenY float64) {
 
 // IsTileVisible returns false if no part of the tile is within the game screen.
 func (v *Viewport) IsTileVisible(x, y float64) bool {
-	orthoX1, orthoY1 := v.WorldToOrtho(x-3, y)
-	orthoX2, orthoY2 := v.WorldToOrtho(x+3, y)
+	orthoX1, orthoY1 := v.WorldToOrtho(x-worldToOrthoOffsetX, y)
+	orthoX2, orthoY2 := v.WorldToOrtho(x+worldToOrthoOffsetX, y)
 
 	return v.IsOrthoRectVisible(orthoX1, orthoY1, orthoX2, orthoY2)
 }
 
 // IsTileRectVisible returns false if none of the tiles rects are within the game screen.
-func (v *Viewport) IsTileRectVisible(rect d2common.Rectangle) bool {
+func (v *Viewport) IsTileRectVisible(rect d2geom.Rectangle) bool {
 	left := float64((rect.Left - rect.Bottom()) * tileWidth)
 	top := float64((rect.Left + rect.Top) * tileHeight)
 	right := float64((rect.Right() - rect.Top) * tileWidth)

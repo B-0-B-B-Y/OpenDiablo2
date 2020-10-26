@@ -90,6 +90,13 @@ const (
 	HealthManaIndicator = "/data/global/ui/PANEL/hlthmana.DC6"
 	AddSkillButton      = "/data/global/ui/PANEL/level.DC6"
 
+	// --- Help Overlay ---
+
+	// HelpBorder = "/data/global/ui/MENU/helpborder.DC6"
+	HelpBorder       = "/data/global/ui/MENU/800helpborder.DC6"
+	HelpYellowBullet = "/data/global/ui/MENU/helpyellowbullet.DC6"
+	HelpWhiteBullet  = "/data/global/ui/MENU/helpwhitebullet.DC6"
+
 	// Issue #685 - used in the mini-panel
 	GameSmallMenuButton = "/data/global/ui/PANEL/menubutton.DC6"
 	SkillIcon           = "/data/global/ui/PANEL/Skillicon.DC6"
@@ -134,6 +141,7 @@ const (
 	// --- GAME UI ---
 
 	PentSpin        = "/data/global/ui/CURSOR/pentspin.DC6"
+	Minipanel       = "/data/global/ui/PANEL/minipanel.DC6"
 	MinipanelSmall  = "/data/global/ui/PANEL/minipanel_s.dc6"
 	MinipanelButton = "/data/global/ui/PANEL/minipanelbtn.DC6"
 
@@ -160,7 +168,7 @@ const (
 	RunButton      = "/data/global/ui/PANEL/runbutton.dc6"
 	MenuButton     = "/data/global/ui/PANEL/menubutton.DC6"
 	GoldCoinButton = "/data/global/ui/panel/goldcoinbtn.dc6"
-	SquareButton   = "/data/global/ui/panel/buysellbtn.dc6"
+	BuySellButton  = "/data/global/ui/panel/buysellbtn.dc6"
 
 	ArmorPlaceholder      = "/data/global/ui/PANEL/inv_armor.DC6"
 	BeltPlaceholder       = "/data/global/ui/PANEL/inv_belt.DC6"
@@ -173,13 +181,14 @@ const (
 
 	LevelPreset        = "/data/global/excel/LvlPrest.txt"
 	LevelType          = "/data/global/excel/LvlTypes.txt"
-	ObjectType         = "/data/global/excel/objtype.bin"
+	ObjectType         = "/data/global/excel/objtype.txt"
 	LevelWarp          = "/data/global/excel/LvlWarp.txt"
 	LevelDetails       = "/data/global/excel/Levels.txt"
 	LevelMaze          = "/data/global/excel/LvlMaze.txt"
 	LevelSubstitutions = "/data/global/excel/LvlSub.txt"
 
 	ObjectDetails         = "/data/global/excel/Objects.txt"
+	ObjectMode            = "/data/global/excel/ObjMode.txt"
 	SoundSettings         = "/data/global/excel/Sounds.txt"
 	ItemStatCost          = "/data/global/excel/ItemStatCost.txt"
 	ItemRatio             = "/data/global/excel/itemratio.txt"
@@ -191,6 +200,7 @@ const (
 	SetItems              = "/data/global/excel/SetItems.txt"
 	AutoMagic             = "/data/global/excel/automagic.txt"
 	BodyLocations         = "/data/global/excel/bodylocs.txt"
+	Events                = "/data/global/excel/events.txt"
 	Properties            = "/data/global/excel/Properties.txt"
 	Hireling              = "/data/global/excel/hireling.txt"
 	DifficultyLevels      = "/data/global/excel/difficultylevels.txt"
@@ -218,6 +228,10 @@ const (
 	PlayerClass           = "/data/global/excel/PlayerClass.txt"
 	ObjectGroup           = "/data/global/excel/objgroup.txt"
 	CompCode              = "/data/global/excel/compcode.txt"
+	Belts                 = "/data/global/excel/belts.txt"
+	Gamble                = "/data/global/excel/gamble.txt"
+	Colors                = "/data/global/excel/colors.txt"
+	StorePage             = "/data/global/excel/StorePage.txt"
 
 	// --- Animations ---
 
@@ -241,8 +255,8 @@ const (
 
 	MagicPrefix = "/data/global/excel/MagicPrefix.txt"
 	MagicSuffix = "/data/global/excel/MagicSuffix.txt"
-	RarePrefix   = "/data/global/excel/RarePrefix.txt" // these are for item names
-	RareSuffix   = "/data/global/excel/RareSuffix.txt"
+	RarePrefix  = "/data/global/excel/RarePrefix.txt" // these are for item names
+	RareSuffix  = "/data/global/excel/RareSuffix.txt"
 
 	// --- Monster Prefix/Suffixes (?) ---
 	UniquePrefix = "/data/global/excel/UniquePrefix.txt"

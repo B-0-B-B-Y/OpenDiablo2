@@ -9,10 +9,6 @@ import (
 // static check that item implements map entity interface
 var _ d2interface.MapEntity = &Item{}
 
-const (
-	errInvalidItemCodes = "invalid item codes supplied"
-)
-
 // Item is a map entity for an item
 type Item struct {
 	*AnimatedEntity
@@ -44,7 +40,7 @@ func (i *Item) Highlight() {
 	i.AnimatedEntity.highlight = true
 }
 
-// Name returns the item name
+// Label returns the item label
 func (i *Item) Label() string {
 	return i.Item.Label()
 }

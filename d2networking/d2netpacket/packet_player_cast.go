@@ -2,13 +2,14 @@ package d2netpacket
 
 import (
 	"encoding/json"
+	"log"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket/d2netpackettype"
 )
 
 // CastPacket contains a cast command for an entity. It is sent by the server
 // and instructs the client to trigger the use of the given skill on the given
 // entity.
-// TODO: Need to handle being on different maps
 type CastPacket struct {
 	SourceEntityID string  `json:"sourceEntityId"`
 	SkillID        int     `json:"skillId"`
@@ -25,9 +26,13 @@ func CreateCastPacket(entityID string, skillID int, targetX, targetY float64) Ne
 		SkillID:        skillID,
 		TargetX:        targetX,
 		TargetY:        targetY,
-		TargetEntityID: "", // TODO implement targeting entities
+		TargetEntityID: "", // https://github.com/OpenDiablo2/OpenDiablo2/issues/826
 	}
-	b, _ := json.Marshal(castPacket)
+
+	b, err := json.Marshal(castPacket)
+	if err != nil {
+		log.Print(err)
+	}
 
 	return NetPacket{
 		PacketType: d2netpackettype.CastSkill,
@@ -35,6 +40,7 @@ func CreateCastPacket(entityID string, skillID int, targetX, targetY float64) Ne
 	}
 }
 
+// UnmarshalCast unmarshals the given data to a CastPacket struct
 func UnmarshalCast(packet []byte) (CastPacket, error) {
 	var p CastPacket
 	if err := json.Unmarshal(packet, &p); err != nil {

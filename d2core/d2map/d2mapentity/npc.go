@@ -3,11 +3,12 @@ package d2mapentity
 import (
 	"math/rand"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2data/d2datadict"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2path"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 )
 
@@ -15,14 +16,14 @@ import (
 // For example, Deckard Cain.
 type NPC struct {
 	mapEntity
-	Paths         []d2common.Path
+	Paths         []d2path.Path
 	name          string
 	composite     *d2asset.Composite
 	action        int
 	path          int
 	repetitions   int
-	monstatRecord *d2datadict.MonStatsRecord
-	monstatEx     *d2datadict.MonStats2Record
+	monstatRecord *d2records.MonStatsRecord
+	monstatEx     *d2records.MonStats2Record
 	HasPaths      bool
 	isDone        bool
 }
@@ -37,6 +38,7 @@ const (
 
 func selectEquip(slice []string) string {
 	if len(slice) != 0 {
+		// nolint:gosec // not concerned with crypto-strong randomness
 		return slice[rand.Intn(len(slice))]
 	}
 
@@ -64,12 +66,12 @@ func (v *NPC) Render(target d2interface.Surface) {
 }
 
 // Path returns the current part of the entity's path.
-func (v *NPC) Path() d2common.Path {
+func (v *NPC) Path() d2path.Path {
 	return v.Paths[v.path]
 }
 
 // NextPath returns the next part of the entity's path.
-func (v *NPC) NextPath() d2common.Path {
+func (v *NPC) NextPath() d2path.Path {
 	v.path++
 	if v.path == len(v.Paths) {
 		v.path = 0
@@ -81,7 +83,7 @@ func (v *NPC) NextPath() d2common.Path {
 // SetPaths sets the entity's paths to the given slice. It also sets flags
 // on the entity indicating that it has paths and has completed the
 // previous none.
-func (v *NPC) SetPaths(paths []d2common.Path) {
+func (v *NPC) SetPaths(paths []d2path.Path) {
 	v.Paths = paths
 	v.HasPaths = len(paths) > 0
 	v.isDone = true
@@ -119,6 +121,8 @@ func (v *NPC) next() {
 	var newAnimationMode d2enum.MonsterAnimationMode
 
 	v.isDone = true
+
+	// nolint:gosec // not concerned with crypto-strong randomness
 	v.repetitions = minAnimationRepetitions + rand.Intn(maxAnimationRepetitions)
 
 	switch d2enum.NPCActionType(v.action) {
@@ -182,6 +186,6 @@ func (v *NPC) GetVelocity() d2vector.Vector {
 }
 
 // GetSize returns the current frame size
-func (v* NPC) GetSize() (width, height int) {
+func (v *NPC) GetSize() (width, height int) {
 	return v.composite.GetSize()
 }

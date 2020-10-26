@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"log"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
@@ -22,9 +23,15 @@ const (
 )
 
 // NewSprite creates a new Sprite
-func (ui *UIManager) NewSprite(animation d2interface.Animation) (*Sprite, error) {
-	if animation == nil {
+func (ui *UIManager) NewSprite(animationPath, palettePath string) (*Sprite, error) {
+	animation, err := ui.asset.LoadAnimation(animationPath, palettePath)
+	if animation == nil || err != nil {
 		return nil, fmt.Errorf(errNoAnimation)
+	}
+
+	err = animation.BindRenderer(ui.renderer)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Sprite{animation: animation}, nil
@@ -56,7 +63,8 @@ func (s *Sprite) RenderSegmented(target d2interface.Surface, segmentsX, segments
 		var currentX, maxFrameHeight int
 
 		for x := 0; x < segmentsX; x++ {
-			if err := s.animation.SetCurrentFrame(x + y*segmentsX + frameOffset*segmentsX*segmentsY); err != nil {
+			idx := x + y*segmentsX + frameOffset*segmentsX*segmentsY
+			if err := s.animation.SetCurrentFrame(idx); err != nil {
 				return err
 			}
 
@@ -147,7 +155,10 @@ func (s *Sprite) SetCurrentFrame(frameIndex int) error {
 
 // Rewind sprite to beginning
 func (s *Sprite) Rewind() {
-	_ = s.animation.SetCurrentFrame(0)
+	err := s.animation.SetCurrentFrame(0)
+	if err != nil {
+		log.Print(err)
+	}
 }
 
 // PlayForward plays sprite forward
@@ -173,11 +184,6 @@ func (s *Sprite) SetPlayLoop(loop bool) {
 // SetPlayLength sets the play length of the sprite animation
 func (s *Sprite) SetPlayLength(playLength float64) {
 	s.animation.SetPlayLength(playLength)
-}
-
-// SetPlayLengthMs sets the play length of the sprite animation in milliseconds
-func (s *Sprite) SetPlayLengthMs(playLengthMs int) {
-	s.animation.SetPlayLengthMs(playLengthMs)
 }
 
 // SetColorMod sets the color modifier

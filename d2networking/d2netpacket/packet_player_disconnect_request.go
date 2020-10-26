@@ -2,15 +2,18 @@ package d2netpacket
 
 import (
 	"encoding/json"
-	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
+	"log"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket/d2netpackettype"
 )
 
 // PlayerDisconnectRequestPacket contains a player ID and game state.
 // It is sent by a remote client to close the connection (leave a game).
 type PlayerDisconnectRequestPacket struct {
-	ID          string                `json:"id"`
-	PlayerState *d2player.PlayerState `json:"gameState"` // TODO: remove this? It isn't used.
+	ID          string            `json:"id"`
+	PlayerState *d2hero.HeroState `json:"gameState"`
 }
 
 // CreatePlayerDisconnectRequestPacket returns a NetPacket which defines a
@@ -19,7 +22,11 @@ func CreatePlayerDisconnectRequestPacket(id string) NetPacket {
 	playerDisconnectRequest := PlayerDisconnectRequestPacket{
 		ID: id,
 	}
-	b, _ := json.Marshal(playerDisconnectRequest)
+
+	b, err := json.Marshal(playerDisconnectRequest)
+	if err != nil {
+		log.Print(err)
+	}
 
 	return NetPacket{
 		PacketType: d2netpackettype.PlayerDisconnectionNotification,
@@ -27,11 +34,14 @@ func CreatePlayerDisconnectRequestPacket(id string) NetPacket {
 	}
 }
 
+// UnmarshalPlayerDisconnectionRequest unmarshals the given data to a
+// PlayerDisconnectRequestPacket struct
 func UnmarshalPlayerDisconnectionRequest(packet []byte) (PlayerDisconnectRequestPacket, error) {
 	var resp PlayerDisconnectRequestPacket
 
 	if err := json.Unmarshal(packet, &resp); err != nil {
 		return resp, err
 	}
+
 	return resp, nil
 }

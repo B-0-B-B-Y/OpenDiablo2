@@ -6,13 +6,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
 	"log"
 	"strings"
 
 	"github.com/JoshVarga/blast"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2data/d2compression"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
 )
 
 // Stream represents a stream of data in an MPQ archive
@@ -33,7 +33,7 @@ func CreateStream(mpq *MPQ, blockTableEntry BlockTableEntry, fileName string) (*
 	result := &Stream{
 		MPQData:           mpq,
 		BlockTableEntry:   blockTableEntry,
-		CurrentBlockIndex: 0xFFFFFFFF, //nolint:gomnd MPQ magic
+		CurrentBlockIndex: 0xFFFFFFFF, //nolint:gomnd // MPQ magic
 	}
 	fileSegs := strings.Split(fileName, `\`)
 	result.EncryptionSeed = hashString(fileSegs[len(fileSegs)-1], 3)
@@ -42,7 +42,7 @@ func CreateStream(mpq *MPQ, blockTableEntry BlockTableEntry, fileName string) (*
 		result.EncryptionSeed = (result.EncryptionSeed + result.BlockTableEntry.FilePosition) ^ result.BlockTableEntry.UncompressedFileSize
 	}
 
-	result.BlockSize = 0x200 << result.MPQData.data.BlockSize //nolint:gomnd MPQ magic
+	result.BlockSize = 0x200 << result.MPQData.data.BlockSize //nolint:gomnd // MPQ magic
 
 	if result.BlockTableEntry.HasFlag(FilePatchFile) {
 		log.Fatal("Patching is not supported")
@@ -62,18 +62,24 @@ func (v *Stream) loadBlockOffsets() error {
 	blockPositionCount := ((v.BlockTableEntry.UncompressedFileSize + v.BlockSize - 1) / v.BlockSize) + 1
 	v.BlockPositions = make([]uint32, blockPositionCount)
 
-	_, _ = v.MPQData.file.Seek(int64(v.BlockTableEntry.FilePosition), 0)
+	_, err := v.MPQData.file.Seek(int64(v.BlockTableEntry.FilePosition), 0)
+	if err != nil {
+		return err
+	}
 
-	mpqBytes := make([]byte, blockPositionCount*4) //nolint:gomnd MPQ magic
+	mpqBytes := make([]byte, blockPositionCount*4) //nolint:gomnd // MPQ magic
 
-	_, _ = v.MPQData.file.Read(mpqBytes)
+	_, err = v.MPQData.file.Read(mpqBytes)
+	if err != nil {
+		return err
+	}
 
 	for i := range v.BlockPositions {
-		idx := i * 4 //nolint:gomnd MPQ magic
+		idx := i * 4 //nolint:gomnd // MPQ magic
 		v.BlockPositions[i] = binary.LittleEndian.Uint32(mpqBytes[idx : idx+4])
 	}
 
-	blockPosSize := blockPositionCount << 2 //nolint:gomnd MPQ magic
+	blockPosSize := blockPositionCount << 2 //nolint:gomnd // MPQ magic
 
 	if v.BlockTableEntry.HasFlag(FileEncrypted) {
 		decrypt(v.BlockPositions, v.EncryptionSeed-1)
@@ -160,8 +166,16 @@ func (v *Stream) bufferData() {
 
 func (v *Stream) loadSingleUnit() {
 	fileData := make([]byte, v.BlockSize)
-	_, _ = v.MPQData.file.Seek(int64(v.MPQData.data.HeaderSize), 0)
-	_, _ = v.MPQData.file.Read(fileData)
+
+	_, err := v.MPQData.file.Seek(int64(v.MPQData.data.HeaderSize), 0)
+	if err != nil {
+		log.Print(err)
+	}
+
+	_, err = v.MPQData.file.Read(fileData)
+	if err != nil {
+		log.Print(err)
+	}
 
 	if v.BlockSize == v.BlockTableEntry.UncompressedFileSize {
 		v.CurrentData = fileData
@@ -188,8 +202,15 @@ func (v *Stream) loadBlock(blockIndex, expectedLength uint32) []byte {
 	offset += v.BlockTableEntry.FilePosition
 	data := make([]byte, toRead)
 
-	_, _ = v.MPQData.file.Seek(int64(offset), 0)
-	_, _ = v.MPQData.file.Read(data)
+	_, err := v.MPQData.file.Seek(int64(offset), 0)
+	if err != nil {
+		log.Print(err)
+	}
+
+	_, err = v.MPQData.file.Read(data)
+	if err != nil {
+		log.Print(err)
+	}
 
 	if v.BlockTableEntry.HasFlag(FileEncrypted) && v.BlockTableEntry.UncompressedFileSize > 3 {
 		if v.EncryptionSeed == 0 {
@@ -214,7 +235,7 @@ func (v *Stream) loadBlock(blockIndex, expectedLength uint32) []byte {
 	return data
 }
 
-//nolint:gomnd Will fix enum values later
+//nolint:gomnd // Will fix enum values later
 func decompressMulti(data []byte /*expectedLength*/, _ uint32) []byte {
 	compressionType := data[0]
 
@@ -249,18 +270,19 @@ func decompressMulti(data []byte /*expectedLength*/, _ uint32) []byte {
 
 		return tmp
 	case 0x48:
-		//byte[] result = PKDecompress(sinput, outputLength);
-		//return MpqWavCompression.Decompress(new MemoryStream(result), 1);
+		// byte[] result = PKDecompress(sinput, outputLength);
+		// return MpqWavCompression.Decompress(new MemoryStream(result), 1);
 		panic("pk + mpqwav decompression not supported")
 	case 0x81:
 		sinput := d2compression.HuffmanDecompress(data[1:])
 		sinput = d2compression.WavDecompress(sinput, 2)
 		tmp := make([]byte, len(sinput))
 		copy(tmp, sinput)
+
 		return tmp
 	case 0x88:
-		//byte[] result = PKDecompress(sinput, outputLength);
-		//return MpqWavCompression.Decompress(new MemoryStream(result), 2);
+		// byte[] result = PKDecompress(sinput, outputLength);
+		// return MpqWavCompression.Decompress(new MemoryStream(result), 2);
 		panic("pk + wav decompression not supported")
 	default:
 		panic(fmt.Sprintf("decompression not supported for unknown compression type %X", compressionType))
@@ -276,14 +298,13 @@ func deflate(data []byte) []byte {
 	}
 
 	buffer := new(bytes.Buffer)
-	_, err = buffer.ReadFrom(r)
 
+	_, err = buffer.ReadFrom(r)
 	if err != nil {
 		log.Panic(err)
 	}
 
 	err = r.Close()
-
 	if err != nil {
 		log.Panic(err)
 	}
@@ -300,14 +321,13 @@ func pkDecompress(data []byte) []byte {
 	}
 
 	buffer := new(bytes.Buffer)
-	_, err = buffer.ReadFrom(r)
 
+	_, err = buffer.ReadFrom(r)
 	if err != nil {
 		panic(err)
 	}
 
 	err = r.Close()
-
 	if err != nil {
 		panic(err)
 	}

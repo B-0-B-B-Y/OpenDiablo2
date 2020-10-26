@@ -7,13 +7,12 @@ import (
 	"log"
 	"math"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2ds1"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 )
@@ -27,7 +26,7 @@ const (
 	dbgBoxHeight  = 60
 	dbgBoxPadding = 10
 
-	dbgCollisionSize = 5
+	dbgCollisionSize    = 5
 	dbgCollisionOffsetX = -3
 	dbgCollisionOffsetY = 4
 
@@ -49,6 +48,7 @@ const (
 
 // MapRenderer manages the game viewport and Camera. It requests tile and entity data from MapEngine and renders it.
 type MapRenderer struct {
+	asset               *d2asset.AssetManager
 	renderer            d2interface.Renderer   // Used for drawing operations
 	mapEngine           *d2mapengine.MapEngine // The map engine that is being rendered
 	palette             d2interface.Palette    // The palette used for this map
@@ -62,9 +62,11 @@ type MapRenderer struct {
 }
 
 // CreateMapRenderer creates a new MapRenderer, sets the required fields and returns a pointer to it.
-func CreateMapRenderer(renderer d2interface.Renderer, mapEngine *d2mapengine.MapEngine,
+func CreateMapRenderer(asset *d2asset.AssetManager, renderer d2interface.Renderer,
+	mapEngine *d2mapengine.MapEngine,
 	term d2interface.Terminal, startX, startY float64) *MapRenderer {
 	result := &MapRenderer{
+		asset:     asset,
 		renderer:  renderer,
 		mapEngine: mapEngine,
 		viewport:  NewViewport(0, 0, 800, 600),
@@ -122,6 +124,13 @@ func (mr *MapRenderer) SetMapEngine(mapEngine *d2mapengine.MapEngine) {
 //
 // Pass 4: Roof tiles.
 func (mr *MapRenderer) Render(target d2interface.Surface) {
+	// https://github.com/OpenDiablo2/OpenDiablo2/issues/789
+	// Prevents concurrent map read & write exceptions that otherwise occur when we join a TCP game
+	// as a remote client, due to rendering before we have handled the GenerateMapPacket.
+	if mr.mapEngine.IsLoading {
+		return
+	}
+
 	mapSize := mr.mapEngine.Size()
 
 	stxf, styf := mr.viewport.ScreenToWorld(screenMiddleX, -200)
@@ -197,7 +206,10 @@ func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, e
 		for tileX := startX; tileX < endX; tileX++ {
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
 
-			// TODO: Do not loop over every entity every frame
+			tileEnt := make([]d2interface.MapEntity, 0)
+
+			// need to add render culling
+			// https://github.com/OpenDiablo2/OpenDiablo2/issues/821
 			for _, mapEntity := range mr.mapEngine.Entities() {
 				pos := mapEntity.GetPosition()
 				vec := pos.World()
@@ -211,9 +223,22 @@ func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, e
 					continue
 				}
 
-				target.PushTranslation(mr.viewport.GetTranslationScreen())
-				mapEntity.Render(target)
-				target.Pop()
+				tileEnt = append(tileEnt, mapEntity)
+			}
+
+			for subY := 0; subY < 5; subY++ {
+				for subX := 0; subX < 5; subX++ {
+					for _, mapEntity := range tileEnt {
+						pos := mapEntity.GetPosition()
+						if (int(pos.SubTileOffset().X()) != subX) || (int(pos.SubTileOffset().Y()) != subY) {
+							continue
+						}
+
+						target.PushTranslation(mr.viewport.GetTranslationScreen())
+						mapEntity.Render(target)
+						target.Pop()
+					}
+				}
 			}
 
 			mr.viewport.PopTranslation()
@@ -229,7 +254,10 @@ func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, e
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
 			mr.renderTilePass2(tile, target)
 
-			// TODO: Do not loop over every entity every frame
+			tileEnt := make([]d2interface.MapEntity, 0)
+
+			// need to add render culling
+			// https://github.com/OpenDiablo2/OpenDiablo2/issues/821
 			for _, mapEntity := range mr.mapEngine.Entities() {
 				pos := mapEntity.GetPosition()
 				vec := pos.World()
@@ -243,9 +271,22 @@ func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, e
 					continue
 				}
 
-				target.PushTranslation(mr.viewport.GetTranslationScreen())
-				mapEntity.Render(target)
-				target.Pop()
+				tileEnt = append(tileEnt, mapEntity)
+			}
+
+			for subY := 0; subY < 5; subY++ {
+				for subX := 0; subX < 5; subX++ {
+					for _, mapEntity := range tileEnt {
+						pos := mapEntity.GetPosition()
+						if (int(pos.SubTileOffset().X()) != subX) || (int(pos.SubTileOffset().Y()) != subY) {
+							continue
+						}
+
+						target.PushTranslation(mr.viewport.GetTranslationScreen())
+						mapEntity.Render(target)
+						target.Pop()
+					}
+				}
 			}
 
 			mr.viewport.PopTranslation()
@@ -401,8 +442,8 @@ func (mr *MapRenderer) renderEntityDebug(target d2interface.Surface) {
 		yWithin := (t <= my) && (b >= my)
 		within := xWithin && yWithin
 
-		boxLineColor := d2common.Color(magentaFullOpacity)
-		boxHoverColor := d2common.Color(yellowFullOpacity)
+		boxLineColor := d2util.Color(magentaFullOpacity)
+		boxHoverColor := d2util.Color(yellowFullOpacity)
 
 		boxColor := boxLineColor
 
@@ -435,14 +476,14 @@ func (mr *MapRenderer) renderEntityDebug(target d2interface.Surface) {
 		if within {
 			mr.viewport.PushTranslationWorld(x, y)
 			target.PushTranslation(screenX, screenY)
-			target.DrawLine(offX, offY, d2common.Color(whiteHalfOpacity))
+			target.DrawLine(offX, offY, d2util.Color(whiteHalfOpacity))
 			target.PushTranslation(offX+dbgBoxPadding, offY-dbgBoxPadding*two)
 			target.PushTranslation(-dbgOffsetXY, -dbgOffsetXY)
-			target.DrawRect(dbgBoxWidth, dbgBoxHeight, d2common.Color(blackQuarterOpacity))
+			target.DrawRect(dbgBoxWidth, dbgBoxHeight, d2util.Color(blackQuarterOpacity))
 			target.Pop()
 			target.DrawTextf("World (%.2f, %.2f)\nVelocity (%.2f, %.2f)", x, y, vx, vy)
 			target.Pop()
-			target.DrawLine(int(vx), int(vy), d2common.Color(lightGreenFullOpacity))
+			target.DrawLine(int(vx), int(vy), d2util.Color(lightGreenFullOpacity))
 			target.Pop()
 			mr.viewport.PopTranslation()
 		}
@@ -460,9 +501,9 @@ func (mr *MapRenderer) WorldToScreenF(x, y float64) (screenX, screenY float64) {
 }
 
 func (mr *MapRenderer) renderTileDebug(ax, ay, debugVisLevel int, target d2interface.Surface) {
-	subTileColor := d2common.Color(lightBlueQuarterOpacity)
-	tileColor := d2common.Color(whiteQuarterOpacity)
-	tileCollisionColor := d2common.Color(redQuarterOpacity)
+	subTileColor := d2util.Color(lightBlueQuarterOpacity)
+	tileColor := d2util.Color(whiteQuarterOpacity)
+	tileCollisionColor := d2util.Color(redQuarterOpacity)
 
 	screenX1, screenY1 := mr.viewport.WorldToScreen(float64(ax), float64(ay))
 	screenX2, screenY2 := mr.viewport.WorldToScreen(float64(ax+1), float64(ay))
@@ -495,7 +536,7 @@ func (mr *MapRenderer) renderTileDebug(ax, ay, debugVisLevel int, target d2inter
 
 		for i, wall := range tile.Components.Walls {
 			if wall.Type.Special() {
-				target.PushTranslation(-20, 10+(i+1)*14) // what are these magic numbers??
+				target.PushTranslation(-20, 10+(i+1)*14) // nolint:gomnd // just for debug
 				target.DrawTextf("s: %v-%v", wall.Style, wall.Sequence)
 				target.Pop()
 			}
@@ -518,23 +559,28 @@ func (mr *MapRenderer) renderTileDebug(ax, ay, debugVisLevel int, target d2inter
 	}
 }
 
-// Advance is called once per frame and maintains the MapRenderer's record previous render timestamp and current frame.
-func (mr *MapRenderer) Advance(elapsed float64) {
-	frameLength := 0.1
+const (
+	frameOverflow = 10
+	frameLength   = 1.0 / frameOverflow
+)
 
+// Advance is called once per frame and maintains the MapRenderer's previous
+// render timestamp and current frame.
+func (mr *MapRenderer) Advance(elapsed float64) {
 	mr.lastFrameTime += elapsed
 	framesAdvanced := int(mr.lastFrameTime / frameLength)
 	mr.lastFrameTime -= float64(framesAdvanced) * frameLength
 
 	mr.currentFrame += framesAdvanced
-	if mr.currentFrame > 9 {
+	if mr.currentFrame >= frameOverflow {
 		mr.currentFrame = 0
 	}
 
 	mr.Camera.Advance(elapsed)
 }
 
-func loadPaletteForAct(levelType d2enum.RegionIdType) (d2interface.Palette, error) {
+func (mr *MapRenderer) loadPaletteForAct(levelType d2enum.RegionIdType) (d2interface.Palette,
+	error) {
 	var palettePath string
 
 	switch levelType {
@@ -557,7 +603,7 @@ func loadPaletteForAct(levelType d2enum.RegionIdType) (d2interface.Palette, erro
 		return nil, errors.New("failed to find palette for region")
 	}
 
-	return d2asset.LoadPalette(palettePath)
+	return mr.asset.LoadPalette(palettePath)
 }
 
 // ViewportToLeft moves the viewport to the left.

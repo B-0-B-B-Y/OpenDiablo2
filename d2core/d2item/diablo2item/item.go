@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"strconv"
 	"strings"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2data/d2datadict"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2tbl"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2item"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2stats"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2stats/diablo2stats"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
 )
 
@@ -44,13 +45,21 @@ const (
 	rareJewelAffixMax  = 4
 )
 
+const (
+	maxAffixesOnMagicItem = 2
+	sidesOnACoin          = 2 // for random coin flip
+)
+
 // static check to ensure Item implements Item
 var _ d2item.Item = &Item{}
 
+// Item is a representation of a diablo2 item
+// nolint:structcheck,unused // WIP
 type Item struct {
-	name string
-	Seed int64
-	rand *rand.Rand // non-global rand instance for re-generating the item
+	factory *ItemFactory
+	name    string
+	Seed    int64
+	rand    *rand.Rand // non-global rand instance for re-generating the item
 
 	slotType d2enum.EquippedSlot
 
@@ -76,6 +85,7 @@ type Item struct {
 	sockets []*d2item.Item // there will be checks for handling the craziness this might entail
 }
 
+// nolint:structcheck,unused // WIP
 type itemAttributes struct {
 	worldSprite     *d2ui.Sprite
 	inventorySprite *d2ui.Sprite
@@ -111,7 +121,7 @@ type itemAttributes struct {
 type minMaxEnhanceable struct {
 	min     int
 	max     int
-	enhance int
+	enhance int // nolint:structcheck,unused // WIP
 }
 
 // Label returns the item name
@@ -119,7 +129,7 @@ func (i *Item) Label() string {
 	str := i.name
 
 	if !i.attributes.identitified {
-		str = d2common.TranslateString(i.CommonRecord().NameString)
+		str = d2tbl.TranslateString(i.CommonRecord().NameString)
 	}
 
 	if i.attributes.crafted {
@@ -136,11 +146,11 @@ func (i *Item) Label() string {
 
 	numAffixes := len(i.PrefixRecords()) + len(i.SuffixRecords())
 
-	if numAffixes > 0 && numAffixes < 3 {
+	if numAffixes > 0 && numAffixes <= maxAffixesOnMagicItem {
 		return d2ui.ColorTokenize(str, d2ui.ColorTokenMagicItem)
 	}
 
-	if numAffixes > 2 {
+	if numAffixes > maxAffixesOnMagicItem {
 		return d2ui.ColorTokenize(str, d2ui.ColorTokenRareItem)
 	}
 
@@ -177,49 +187,49 @@ func (i *Item) ItemLevel() int {
 }
 
 // TypeRecord returns the ItemTypeRecord of the item
-func (i *Item) TypeRecord() *d2datadict.ItemTypeRecord {
-	return d2datadict.ItemTypes[i.TypeCode]
+func (i *Item) TypeRecord() *d2records.ItemTypeRecord {
+	return i.factory.asset.Records.Item.Types[i.TypeCode]
 }
 
 // CommonRecord returns the ItemCommonRecord of the item
-func (i *Item) CommonRecord() *d2datadict.ItemCommonRecord {
-	return d2datadict.CommonItems[i.CommonCode]
+func (i *Item) CommonRecord() *d2records.ItemCommonRecord {
+	return i.factory.asset.Records.Item.All[i.CommonCode]
 }
 
 // UniqueRecord returns the UniqueItemRecord of the item
-func (i *Item) UniqueRecord() *d2datadict.UniqueItemRecord {
-	return d2datadict.UniqueItems[i.UniqueCode]
+func (i *Item) UniqueRecord() *d2records.UniqueItemRecord {
+	return i.factory.asset.Records.Item.Unique[i.UniqueCode]
 }
 
 // SetRecord returns the SetRecord of the item
-func (i *Item) SetRecord() *d2datadict.SetRecord {
-	return d2datadict.SetRecords[i.SetCode]
+func (i *Item) SetRecord() *d2records.SetRecord {
+	return i.factory.asset.Records.Item.Sets[i.SetCode]
 }
 
 // SetItemRecord returns the SetRecord of the item
-func (i *Item) SetItemRecord() *d2datadict.SetItemRecord {
-	return d2datadict.SetItems[i.SetItemCode]
+func (i *Item) SetItemRecord() *d2records.SetItemRecord {
+	return i.factory.asset.Records.Item.SetItems[i.SetItemCode]
 }
 
 // PrefixRecords returns the ItemAffixCommonRecords of the prefixes of the item
-func (i *Item) PrefixRecords() []*d2datadict.ItemAffixCommonRecord {
-	return affixRecords(i.PrefixCodes, d2datadict.MagicPrefix)
+func (i *Item) PrefixRecords() []*d2records.ItemAffixCommonRecord {
+	return affixRecords(i.PrefixCodes, i.factory.asset.Records.Item.Magic.Prefix)
 }
 
 // SuffixRecords returns the ItemAffixCommonRecords of the prefixes of the item
-func (i *Item) SuffixRecords() []*d2datadict.ItemAffixCommonRecord {
-	return affixRecords(i.SuffixCodes, d2datadict.MagicSuffix)
+func (i *Item) SuffixRecords() []*d2records.ItemAffixCommonRecord {
+	return affixRecords(i.SuffixCodes, i.factory.asset.Records.Item.Magic.Suffix)
 }
 
 func affixRecords(
 	fromCodes []string,
-	affixes map[string]*d2datadict.ItemAffixCommonRecord,
-) []*d2datadict.ItemAffixCommonRecord {
+	affixes map[string]*d2records.ItemAffixCommonRecord,
+) []*d2records.ItemAffixCommonRecord {
 	if len(fromCodes) < 1 {
 		return nil
 	}
 
-	result := make([]*d2datadict.ItemAffixCommonRecord, len(fromCodes))
+	result := make([]*d2records.ItemAffixCommonRecord, len(fromCodes))
 
 	for idx, code := range fromCodes {
 		rec := affixes[code]
@@ -248,61 +258,60 @@ func (i *Item) Description() string {
 // affix records, depending on the drop modifier given. If an unsupported
 // drop modifier is supplied, it will attempt to reconcile by picked
 // magic affixes as if it were a rare.
-func (i *Item) applyDropModifier(modifier DropModifier) {
-
+func (i *Item) applyDropModifier(modifier dropModifier) {
 	modifier = i.sanitizeDropModifier(modifier)
 
 	switch modifier {
-	case DropModifierUnique:
+	case dropModifierUnique:
 		i.pickUniqueRecord()
 
 		if i.UniqueRecord() == nil {
-			i.applyDropModifier(DropModifierRare)
+			i.applyDropModifier(dropModifierRare)
 			return
 		}
-	case DropModifierSet:
+	case dropModifierSet:
 		i.pickSetRecords()
 
 		if i.SetRecord() == nil || i.SetItemRecord() == nil {
-			i.applyDropModifier(DropModifierRare)
+			i.applyDropModifier(dropModifierRare)
 			return
 		}
-	case DropModifierRare, DropModifierMagic:
+	case dropModifierRare, dropModifierMagic:
 		// the method of picking stays the same for magic/rare
 		// but magic gets to pick more, and jewels have a special
 		// way of picking affixes
 		i.pickMagicAffixes(modifier)
-	case DropModifierNone:
+	case dropModifierNone:
 	default:
 		return
 	}
 }
 
-func (i *Item) sanitizeDropModifier(modifier DropModifier) DropModifier {
+func (i *Item) sanitizeDropModifier(modifier dropModifier) dropModifier {
 	if i.TypeRecord() == nil {
 		i.TypeCode = i.CommonRecord().Type
 	}
 
 	// should this item always be normal?
 	if i.TypeRecord().Normal {
-		modifier = DropModifierNone
+		modifier = dropModifierNone
 	}
 
 	// should this item always be magic?
 	if i.TypeRecord().Magic {
-		modifier = DropModifierMagic
+		modifier = dropModifierMagic
 	}
 
 	// if it isn't allowed to be rare, force it to be magic
-	if modifier == DropModifierRare && !i.TypeRecord().Rare {
-		modifier = DropModifierMagic
+	if modifier == dropModifierRare && !i.TypeRecord().Rare {
+		modifier = dropModifierMagic
 	}
 
 	return modifier
 }
 
 func (i *Item) pickUniqueRecord() {
-	matches := findMatchingUniqueRecords(i.CommonRecord())
+	matches := i.findMatchingUniqueRecords(i.CommonRecord())
 	if len(matches) > 0 {
 		match := matches[i.rand.Intn(len(matches))]
 		i.UniqueCode = match.Code
@@ -310,7 +319,7 @@ func (i *Item) pickUniqueRecord() {
 }
 
 func (i *Item) pickSetRecords() {
-	if matches := findMatchingSetItemRecords(i.CommonRecord()); len(matches) > 0 {
+	if matches := i.findMatchingSetItemRecords(i.CommonRecord()); len(matches) > 0 {
 		picked := matches[i.rand.Intn(len(matches))]
 		i.SetItemCode = picked.SetItemKey
 
@@ -320,7 +329,7 @@ func (i *Item) pickSetRecords() {
 	}
 }
 
-func (i *Item) pickMagicAffixes(mod DropModifier) {
+func (i *Item) pickMagicAffixes(mod dropModifier) {
 	if i.PrefixCodes == nil {
 		i.PrefixCodes = make([]string, 0)
 	}
@@ -332,7 +341,7 @@ func (i *Item) pickMagicAffixes(mod DropModifier) {
 	totalAffixes, numSuffixes, numPrefixes := 0, 0, 0
 
 	switch mod {
-	case DropModifierRare:
+	case dropModifierRare:
 		if i.CommonRecord().Type == jewelItemCode {
 			numPrefixes, numSuffixes = rareJewelPrefixMax, rareJewelSuffixMax
 			totalAffixes = rareJewelAffixMax
@@ -340,20 +349,27 @@ func (i *Item) pickMagicAffixes(mod DropModifier) {
 			numPrefixes, numSuffixes = rareItemPrefixMax, rareItemSuffixMax
 			totalAffixes = numPrefixes + numSuffixes
 		}
-	case DropModifierMagic:
+	case dropModifierMagic:
 		numPrefixes, numSuffixes = magicItemPrefixMax, magicItemSuffixMax
 		totalAffixes = numPrefixes + numSuffixes
 	}
 
-	i.pickMagicPrefixes(numPrefixes, totalAffixes)
-	i.pickMagicSuffixes(numSuffixes, totalAffixes)
+	prefixes := i.factory.asset.Records.Item.Magic.Prefix
+	suffixes := i.factory.asset.Records.Item.Magic.Prefix
+
+	i.PrefixCodes = i.pickRandomAffixes(numPrefixes, totalAffixes, prefixes)
+	i.SuffixCodes = i.pickRandomAffixes(numSuffixes, totalAffixes, suffixes)
 }
 
-func (i *Item) pickMagicPrefixes(max, totalMax int) {
-	for numPicks := 0; numPicks < max; numPicks++ {
-		matches := findMatchingAffixes(i.CommonRecord(), d2datadict.MagicPrefix)
+func (i *Item) pickRandomAffixes(max, totalMax int,
+	affixMap map[string]*d2records.ItemAffixCommonRecord) []string {
+	pickedCodes := make([]string, 0)
 
-		if rollPrefix := i.rand.Intn(2); rollPrefix > 0 {
+	for numPicks := 0; numPicks < max; numPicks++ {
+		matches := i.factory.FindMatchingAffixes(i.CommonRecord(), affixMap)
+
+		// flip a coin for whether to get an affix on this pick
+		if coinToss := i.rand.Intn(sidesOnACoin) > 0; coinToss {
 			affixCount := len(i.PrefixRecords()) + len(i.SuffixRecords())
 			if len(i.PrefixRecords()) > max || affixCount > totalMax {
 				break
@@ -361,36 +377,21 @@ func (i *Item) pickMagicPrefixes(max, totalMax int) {
 
 			if len(matches) > 0 {
 				picked := matches[i.rand.Intn(len(matches))]
-				i.PrefixCodes = append(i.PrefixCodes, picked.Name)
+				pickedCodes = append(pickedCodes, picked.Name)
 			}
 		}
 	}
-}
 
-func (i *Item) pickMagicSuffixes(max, totalMax int) {
-	for numPicks := 0; numPicks < max; numPicks++ {
-		matches := findMatchingAffixes(i.CommonRecord(), d2datadict.MagicSuffix)
-
-		if rollSuffix := i.rand.Intn(2); rollSuffix > 0 {
-			affixCount := len(i.PrefixRecords()) + len(i.SuffixRecords())
-			if len(i.PrefixRecords()) > max || affixCount > totalMax {
-				break
-			}
-
-			if len(matches) > 0 {
-				picked := matches[i.rand.Intn(len(matches))]
-				i.SuffixCodes = append(i.SuffixCodes, picked.Name)
-			}
-		}
-	}
+	return pickedCodes
 }
 
 // SetSeed sets the item generator seed
 func (i *Item) SetSeed(seed int64) {
 	if i.rand == nil {
-		source := rand.NewSource(seed)
-		i.rand = rand.New(source)
+		// nolint:gosec // not concerned with crypto-strong randomness
+		i.rand = rand.New(rand.NewSource(seed))
 	}
+
 	i.Seed = seed
 }
 
@@ -401,6 +402,7 @@ func (i *Item) init() *Item {
 
 	i.generateAllProperties()
 	i.updateItemAttributes()
+
 	return i
 }
 
@@ -430,12 +432,8 @@ func (i *Item) generateProperties(pool PropertyPool) {
 	var props []*Property
 
 	switch pool {
-	case PropertyPoolPrefix:
-		if generated := i.generatePrefixProperties(); generated != nil {
-			props = generated
-		}
-	case PropertyPoolSuffix:
-		if generated := i.generateSuffixProperties(); generated != nil {
+	case PropertyPoolPrefix, PropertyPoolSuffix:
+		if generated := i.generateAffixProperties(pool); generated != nil {
 			props = generated
 		}
 	case PropertyPoolUnique:
@@ -446,8 +444,7 @@ func (i *Item) generateProperties(pool PropertyPool) {
 		if generated := i.generateSetItemProperties(); generated != nil {
 			props = generated
 		}
-	case PropertyPoolSet:
-		// todo set bonus handling, needs player/equipment context
+	case PropertyPoolSet: // https://github.com/OpenDiablo2/OpenDiablo2/issues/817
 	}
 
 	if props == nil {
@@ -523,47 +520,37 @@ func (i *Item) updateItemAttributes() {
 	i.attributes.defense = def
 }
 
-func (i *Item) generatePrefixProperties() []*Property {
-	if i.PrefixRecords() == nil || len(i.PrefixRecords()) < 1 {
+func (i *Item) generateAffixProperties(pool PropertyPool) []*Property {
+	var affixRecords []*d2records.ItemAffixCommonRecord
+
+	switch pool {
+	case PropertyPoolPrefix:
+		affixRecords = i.PrefixRecords()
+	case PropertyPoolSuffix:
+		affixRecords = i.SuffixRecords()
+	default:
+		return nil
+	}
+
+	if affixRecords == nil || len(affixRecords) < 1 {
 		return nil
 	}
 
 	result := make([]*Property, 0)
 
 	// for each prefix
-	for recIdx := range i.PrefixRecords() {
-		prefix := i.PrefixRecords()[recIdx]
+	for recIdx := range affixRecords {
+		affix := affixRecords[recIdx]
 		// for each modifier
-		for modIdx := range prefix.Modifiers {
-			mod := prefix.Modifiers[modIdx]
+		for modIdx := range affix.Modifiers {
+			mod := affix.Modifiers[modIdx]
 
-			prop := NewProperty(mod.Code, mod.Parameter, mod.Min, mod.Max)
-			if prop == nil {
-				continue
+			paramInt, err := strconv.Atoi(mod.Parameter)
+			if err != nil {
+				paramInt = 0
 			}
 
-			result = append(result, prop)
-		}
-	}
-
-	return result
-}
-
-func (i *Item) generateSuffixProperties() []*Property {
-	if i.SuffixRecords() == nil || len(i.SuffixRecords()) < 1 {
-		return nil
-	}
-
-	result := make([]*Property, 0)
-
-	// for each prefix
-	for recIdx := range i.SuffixRecords() {
-		prefix := i.SuffixRecords()[recIdx]
-		// for each modifier
-		for modIdx := range prefix.Modifiers {
-			mod := prefix.Modifiers[modIdx]
-
-			prop := NewProperty(mod.Code, mod.Parameter, mod.Min, mod.Max)
+			prop := i.factory.NewProperty(mod.Code, paramInt, mod.Min, mod.Max)
 			if prop == nil {
 				continue
 			}
@@ -576,48 +563,26 @@ func (i *Item) generateSuffixProperties() []*Property {
 }
 
 func (i *Item) generateUniqueProperties() []*Property {
-	if i.UniqueRecord() == nil {
-		return nil
+	if record := i.UniqueRecord(); record != nil {
+		return i.generateItemProperties(record.Properties[:])
 	}
 
-	result := make([]*Property, 0)
-
-	for propIdx := range i.UniqueRecord().Properties {
-		propInfo := i.UniqueRecord().Properties[propIdx]
-
-		// sketchy ass unique records, the param should be an int but sometimes it's the name
-		// of a skill, which needs to be converted to the skill index
-		paramStr := getStringComponent(propInfo.Parameter)
-		paramInt := getNumericComponent(propInfo.Parameter)
-
-		if paramStr != "" {
-			for skillID := range d2datadict.SkillDetails {
-				if d2datadict.SkillDetails[skillID].Skill == paramStr {
-					paramInt = skillID
-				}
-			}
-		}
-
-		prop := NewProperty(propInfo.Code, paramInt, propInfo.Min, propInfo.Max)
-		if prop == nil {
-			continue
-		}
-
-		result = append(result, prop)
-	}
-
-	return result
+	return nil
 }
 
 func (i *Item) generateSetItemProperties() []*Property {
-	if i.SetItemRecord() == nil {
-		return nil
+	if record := i.SetItemRecord(); record != nil {
+		return i.generateItemProperties(record.Properties[:])
 	}
 
+	return nil
+}
+
+func (i *Item) generateItemProperties(properties []*d2records.PropertyDescriptor) []*Property {
 	result := make([]*Property, 0)
 
-	for propIdx := range i.SetItemRecord().Properties {
-		setProp := i.SetItemRecord().Properties[propIdx]
+	for propIdx := range properties {
+		setProp := properties[propIdx]
 
 		// like with unique records, the property param is sometimes a skill name
 		// as a string, not an integer index
@@ -625,14 +590,14 @@ func (i *Item) generateSetItemProperties() []*Property {
 		paramInt := getNumericComponent(setProp.Parameter)
 
 		if paramStr != "" {
-			for skillID := range d2datadict.SkillDetails {
-				if d2datadict.SkillDetails[skillID].Skill == paramStr {
+			for skillID := range i.factory.asset.Records.Skill.Details {
+				if i.factory.asset.Records.Skill.Details[skillID].Skill == paramStr {
 					paramInt = skillID
 				}
 			}
 		}
 
-		prop := NewProperty(setProp.Code, paramInt, setProp.Min, setProp.Max)
+		prop := i.factory.NewProperty(setProp.Code, paramInt, setProp.Min, setProp.Max)
 		if prop == nil {
 			continue
 		}
@@ -645,16 +610,16 @@ func (i *Item) generateSetItemProperties() []*Property {
 
 func (i *Item) generateName() {
 	if i.SetItemRecord() != nil {
-		i.name = d2common.TranslateString(i.SetItemRecord().SetItemKey)
+		i.name = d2tbl.TranslateString(i.SetItemRecord().SetItemKey)
 		return
 	}
 
 	if i.UniqueRecord() != nil {
-		i.name = d2common.TranslateString(i.UniqueRecord().Name)
+		i.name = d2tbl.TranslateString(i.UniqueRecord().Name)
 		return
 	}
 
-	name := d2common.TranslateString(i.CommonRecord().NameString)
+	name := d2tbl.TranslateString(i.CommonRecord().NameString)
 
 	numAffixes := 0
 	if prefixes := i.PrefixRecords(); prefixes != nil {
@@ -682,13 +647,19 @@ func (i *Item) generateName() {
 	// if it has more than 2 affixes, it's a rare item
 	// rare items use entries from rareprefix.txt and raresuffix.txt to make their names,
 	// and the prefix and suffix actually go before thec current item name
-	if numAffixes >= 3 {
+	if numAffixes > maxAffixesOnMagicItem {
 		i.rand.Seed(i.Seed)
 
-		numPrefix, numSuffix := len(d2datadict.RarePrefixes), len(d2datadict.RareSuffixes)
+		prefixes := i.factory.asset.Records.Item.Rare.Prefix
+		suffixes := i.factory.asset.Records.Item.Rare.Suffix
+
+		numPrefix := len(prefixes)
+		numSuffix := len(suffixes)
+
 		preIdx, sufIdx := i.rand.Intn(numPrefix), i.rand.Intn(numSuffix)
-		prefix := d2datadict.RarePrefixes[preIdx].Name
-		suffix := d2datadict.RareSuffixes[sufIdx].Name
+		prefix := prefixes[preIdx].Name
+		suffix := suffixes[sufIdx].Name
+
 		name = fmt.Sprintf("%s %s\n%s", strings.Title(prefix), strings.Title(suffix), name)
 	}
 
@@ -720,7 +691,7 @@ func (i *Item) GetStatStrings() []string {
 	}
 
 	if len(stats) > 0 {
-		stats = diablo2stats.NewStatList(stats...).ReduceStats().Stats()
+		stats = i.factory.stat.NewStatList(stats...).ReduceStats().Stats()
 	}
 
 	sort.Slice(stats, func(i, j int) bool { return stats[i].Priority() > stats[j].Priority() })
@@ -735,13 +706,13 @@ func (i *Item) GetStatStrings() []string {
 	return result
 }
 
-func findMatchingUniqueRecords(icr *d2datadict.ItemCommonRecord) []*d2datadict.UniqueItemRecord {
-	result := make([]*d2datadict.UniqueItemRecord, 0)
+func (i *Item) findMatchingUniqueRecords(icr *d2records.ItemCommonRecord) []*d2records.UniqueItemRecord {
+	result := make([]*d2records.UniqueItemRecord, 0)
 
 	c1, c2, c3, c4 := icr.Code, icr.NormalCode, icr.UberCode, icr.UltraCode
 
-	for uCode := range d2datadict.UniqueItems {
-		uRec := d2datadict.UniqueItems[uCode]
+	for uCode := range i.factory.asset.Records.Item.Unique {
+		uRec := i.factory.asset.Records.Item.Unique[uCode]
 
 		switch uCode {
 		case c1, c2, c3, c4:
@@ -753,64 +724,15 @@ func findMatchingUniqueRecords(icr *d2datadict.ItemCommonRecord) []*d2datadict.U
 }
 
 // find possible SetItemRecords that the given ItemCommonRecord can have
-func findMatchingSetItemRecords(icr *d2datadict.ItemCommonRecord) []*d2datadict.SetItemRecord {
-	result := make([]*d2datadict.SetItemRecord, 0)
+func (i *Item) findMatchingSetItemRecords(icr *d2records.ItemCommonRecord) []*d2records.SetItemRecord {
+	result := make([]*d2records.SetItemRecord, 0)
 
 	c1, c2, c3, c4 := icr.Code, icr.NormalCode, icr.UberCode, icr.UltraCode
 
-	for setItemIdx := range d2datadict.SetItems {
-		switch d2datadict.SetItems[setItemIdx].ItemCode {
+	for setItemIdx := range i.factory.asset.Records.Item.SetItems {
+		switch i.factory.asset.Records.Item.SetItems[setItemIdx].ItemCode {
 		case c1, c2, c3, c4:
-			result = append(result, d2datadict.SetItems[setItemIdx])
-		}
-	}
-
-	return result
-}
-
-// for a given ItemCommonRecord, find all possible affixes that can spawn
-func findMatchingAffixes(
-	icr *d2datadict.ItemCommonRecord,
-	fromAffixes map[string]*d2datadict.ItemAffixCommonRecord,
-) []*d2datadict.ItemAffixCommonRecord {
-	result := make([]*d2datadict.ItemAffixCommonRecord, 0)
-
-	equivItemTypes := d2datadict.FindEquivalentTypesByItemCommonRecord(icr)
-
-	for prefixIdx := range fromAffixes {
-		include, exclude := false, false
-		affix := fromAffixes[prefixIdx]
-
-		for itemTypeIdx := range equivItemTypes {
-			itemType := equivItemTypes[itemTypeIdx]
-
-			for _, excludedType := range affix.ItemExclude {
-				if itemType == excludedType {
-					exclude = true
-					break
-				}
-			}
-
-			if exclude {
-				break
-			}
-
-			for _, includedType := range affix.ItemInclude {
-				if itemType == includedType {
-					include = true
-					break
-				}
-			}
-
-			if !include {
-				continue
-			}
-
-			if icr.Level < affix.Level {
-				continue
-			}
-
-			result = append(result, affix)
+			result = append(result, i.factory.asset.Records.Item.SetItems[setItemIdx])
 		}
 	}
 
@@ -828,8 +750,8 @@ func (i *Item) GetInventoryItemName() string {
 func (i *Item) GetInventoryItemType() d2enum.InventoryItemType {
 	typeCode := i.TypeRecord().Code
 
-	armorEquiv := d2datadict.ItemEquivalenciesByTypeCode["armo"]
-	weaponEquiv := d2datadict.ItemEquivalenciesByTypeCode["weap"]
+	armorEquiv := i.factory.asset.Records.Item.Equivalency["armo"]
+	weaponEquiv := i.factory.asset.Records.Item.Equivalency["weap"]
 
 	for idx := range armorEquiv {
 		if armorEquiv[idx].Code == typeCode {
@@ -846,37 +768,45 @@ func (i *Item) GetInventoryItemType() d2enum.InventoryItemType {
 	return d2enum.InventoryItemTypeItem
 }
 
-func (i *Item) InventoryGridSize() (int, int) {
+// InventoryGridSize returns the size of the item in grid units
+func (i *Item) InventoryGridSize() (width, height int) {
 	r := i.CommonRecord()
 	return r.InventoryWidth, r.InventoryHeight
 }
 
+// GetItemCode returns the item code
 func (i *Item) GetItemCode() string {
 	return i.CommonRecord().Code
 }
 
+// Serialize the item to a byte slize
 func (i *Item) Serialize() []byte {
 	panic("item serialization not yet implemented")
 }
 
+// InventoryGridSlot returns the inventory grid slot x and y
 func (i *Item) InventoryGridSlot() (x, y int) {
 	return i.GridX, i.GridY
 }
 
+// SetInventoryGridSlot sets the inventory grid slot x and y
 func (i *Item) SetInventoryGridSlot(x, y int) {
 	i.GridX, i.GridY = x, y
 }
 
-func (i *Item) GetInventoryGridSize() (int, int) {
+// GetInventoryGridSize returns the inventory grid size in grid units
+func (i *Item) GetInventoryGridSize() (x, y int) {
 	return i.GridX, i.GridY
 }
 
+// Identify sets the identified attribute of the item
 func (i *Item) Identify() *Item {
 	i.attributes.identitified = true
 	return i
 }
 
-// from a string table
+// string table keys
+// nolint:deadcode,unused,varcheck // WIP
 const (
 	reqNotMet    = "ItemStats1a" // "Requirements not met",
 	unidentified = "ItemStats1b" // "Unidentified",
@@ -896,6 +826,8 @@ const (
 	reqLevel     = "ItemStats1p" // "Required Level:",
 )
 
+// GetItemDescription gets the complete item description as a slice of strings.
+// This is what is used in the item's hover-tooltip
 func (i *Item) GetItemDescription() []string {
 	lines := make([]string, 0)
 
@@ -907,46 +839,46 @@ func (i *Item) GetItemDescription() []string {
 
 	if common.MinAC > 0 {
 		min, max := common.MinAC, common.MaxAC
-		str = fmt.Sprintf("%s %v %s %v", d2common.TranslateString(defense), min, d2common.TranslateString(to), max)
+		str = fmt.Sprintf("%s %v %s %v", d2tbl.TranslateString(defense), min, d2tbl.TranslateString(to), max)
 		str = d2ui.ColorTokenize(str, d2ui.ColorTokenWhite)
 		lines = append(lines, str)
 	}
 
 	if common.MinDamage > 0 {
 		min, max := common.MinDamage, common.MaxDamage
-		str = fmt.Sprintf("%s %v %s %v", d2common.TranslateString(damage1h), min, d2common.TranslateString(to), max)
+		str = fmt.Sprintf("%s %v %s %v", d2tbl.TranslateString(damage1h), min, d2tbl.TranslateString(to), max)
 		str = d2ui.ColorTokenize(str, d2ui.ColorTokenWhite)
 		lines = append(lines, str)
 	}
 
 	if common.Min2HandDamage > 0 {
 		min, max := common.Min2HandDamage, common.Max2HandDamage
-		str = fmt.Sprintf("%s %v %s %v", d2common.TranslateString(damage2h), min, d2common.TranslateString(to), max)
+		str = fmt.Sprintf("%s %v %s %v", d2tbl.TranslateString(damage2h), min, d2tbl.TranslateString(to), max)
 		str = d2ui.ColorTokenize(str, d2ui.ColorTokenWhite)
 		lines = append(lines, str)
 	}
 
 	if common.MinMissileDamage > 0 {
 		min, max := common.MinMissileDamage, common.MaxMissileDamage
-		str = fmt.Sprintf("%s %v %s %v", d2common.TranslateString(damageThrow), min, d2common.TranslateString(to), max)
+		str = fmt.Sprintf("%s %v %s %v", d2tbl.TranslateString(damageThrow), min, d2tbl.TranslateString(to), max)
 		str = d2ui.ColorTokenize(str, d2ui.ColorTokenWhite)
 		lines = append(lines, str)
 	}
 
 	if common.RequiredStrength > 1 {
-		str = fmt.Sprintf("%s %v", d2common.TranslateString(reqStrength), common.RequiredStrength)
+		str = fmt.Sprintf("%s %v", d2tbl.TranslateString(reqStrength), common.RequiredStrength)
 		str = d2ui.ColorTokenize(str, d2ui.ColorTokenWhite)
 		lines = append(lines, str)
 	}
 
 	if common.RequiredDexterity > 1 {
-		str = fmt.Sprintf("%s %v", d2common.TranslateString(reqDexterity), common.RequiredDexterity)
+		str = fmt.Sprintf("%s %v", d2tbl.TranslateString(reqDexterity), common.RequiredDexterity)
 		str = d2ui.ColorTokenize(str, d2ui.ColorTokenWhite)
 		lines = append(lines, str)
 	}
 
 	if common.RequiredLevel > 1 {
-		str = fmt.Sprintf("%s %v", d2common.TranslateString(reqLevel), common.RequiredLevel)
+		str = fmt.Sprintf("%s %v", d2tbl.TranslateString(reqLevel), common.RequiredLevel)
 		str = d2ui.ColorTokenize(str, d2ui.ColorTokenWhite)
 		lines = append(lines, str)
 	}

@@ -2,6 +2,7 @@ package d2netpacket
 
 import (
 	"encoding/json"
+	"log"
 	"time"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket/d2netpackettype"
@@ -19,7 +20,11 @@ func CreateServerClosedPacket() NetPacket {
 	serverClosed := ServerClosedPacket{
 		TS: time.Now(),
 	}
-	b, _ := json.Marshal(serverClosed)
+
+	b, err := json.Marshal(serverClosed)
+	if err != nil {
+		log.Print(err)
+	}
 
 	return NetPacket{
 		PacketType: d2netpackettype.ServerClosed,
@@ -27,11 +32,13 @@ func CreateServerClosedPacket() NetPacket {
 	}
 }
 
+// UnmarshalServerClosed unmarshals the given data to a ServerClosedPacket struct
 func UnmarshalServerClosed(packet []byte) (ServerClosedPacket, error) {
 	var resp ServerClosedPacket
 
 	if err := json.Unmarshal(packet, &resp); err != nil {
 		return resp, err
 	}
+
 	return resp, nil
 }

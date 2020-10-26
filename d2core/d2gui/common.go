@@ -1,22 +1,11 @@
 package d2gui
 
 import (
-	"errors"
 	"image/color"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 )
-
-func loadFont(fontStyle FontStyle) (d2interface.Font, error) {
-	config := getFontStyleConfig(fontStyle)
-	if config == nil {
-		return nil, errors.New("invalid font style")
-	}
-
-	return d2asset.LoadFont(config.fontBasePath+".tbl", config.fontBasePath+".dc6", config.palettePath)
-}
 
 func renderSegmented(animation d2interface.Animation, segmentsX, segmentsY, frameOffset int,
 	target d2interface.Surface) error {

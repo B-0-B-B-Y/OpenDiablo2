@@ -3,24 +3,28 @@ package d2gamescreen
 import (
 	"fmt"
 	"image/color"
+	"log"
 	"math"
 	"os"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2inventory"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
-	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 )
 
 // CharacterSelect represents the character select screen
 type CharacterSelect struct {
+	asset *d2asset.AssetManager
+	*d2mapentity.MapEntityFactory
+	*d2hero.HeroStateFactory
 	background             *d2ui.Sprite
 	newCharButton          *d2ui.Button
 	convertCharButton      *d2ui.Button
@@ -38,8 +42,10 @@ type CharacterSelect struct {
 	characterStatsLabel    [8]*d2ui.Label
 	characterExpLabel      [8]*d2ui.Label
 	characterImage         [8]*d2mapentity.Player
-	gameStates             []*d2player.PlayerState
+	gameStates             []*d2hero.HeroState
 	selectedCharacter      int
+	tickTimer              float64
+	storedTickTimer        float64
 	showDeleteConfirmation bool
 	connectionType         d2clientconnectiontype.ClientConnectionType
 	connectionHost         string
@@ -48,12 +54,13 @@ type CharacterSelect struct {
 	inputManager  d2interface.InputManager
 	audioProvider d2interface.AudioProvider
 	renderer      d2interface.Renderer
-	navigator     Navigator
+	navigator     d2interface.Navigator
 }
 
 // CreateCharacterSelect creates the character select screen and returns a pointer to it
 func CreateCharacterSelect(
-	navigator Navigator,
+	navigator d2interface.Navigator,
+	asset *d2asset.AssetManager,
 	renderer d2interface.Renderer,
 	inputManager d2interface.InputManager,
 	audioProvider d2interface.AudioProvider,
@@ -61,8 +68,14 @@ func CreateCharacterSelect(
 	connectionType d2clientconnectiontype.ClientConnectionType,
 	connectionHost string,
 ) *CharacterSelect {
+	// https://github.com/OpenDiablo2/OpenDiablo2/issues/790
+	playerStateFactory, _ := d2hero.NewHeroStateFactory(asset)
+	entityFactory, _ := d2mapentity.NewMapEntityFactory(asset)
+
 	return &CharacterSelect{
 		selectedCharacter: -1,
+		asset:             asset,
+		MapEntityFactory:  entityFactory,
 		renderer:          renderer,
 		connectionType:    connectionType,
 		connectionHost:    connectionHost,
@@ -70,6 +83,7 @@ func CreateCharacterSelect(
 		audioProvider:     audioProvider,
 		navigator:         navigator,
 		uiManager:         ui,
+		HeroStateFactory:  playerStateFactory,
 	}
 }
 
@@ -123,19 +137,28 @@ const (
 	okBtnX, okBtnY                   = 625, 537
 )
 
+const (
+	doubleClickTime = 1.25
+)
+
 // OnLoad loads the resources for the Character Select screen
 func (v *CharacterSelect) OnLoad(loading d2screen.LoadingState) {
 	v.audioProvider.PlayBGM(d2resource.BGMTitle)
 
-	if err := v.inputManager.BindHandler(v); err != nil {
+	err := v.inputManager.BindHandler(v)
+	if err != nil {
 		fmt.Println("failed to add Character Select screen as event handler")
 	}
 
 	loading.Progress(tenPercent)
 
-	animation, _ := d2asset.LoadAnimation(d2resource.CharacterSelectionBackground, d2resource.PaletteSky)
 	bgX, bgY := 0, 0
-	v.background, _ = v.uiManager.NewSprite(animation)
+
+	v.background, err = v.uiManager.NewSprite(d2resource.CharacterSelectionBackground, d2resource.PaletteSky)
+	if err != nil {
+		log.Print(err)
+	}
+
 	v.background.SetPosition(bgX, bgY)
 
 	v.createButtons(loading)
@@ -154,13 +177,19 @@ func (v *CharacterSelect) OnLoad(loading d2screen.LoadingState) {
 	deleteConfirmX, deleteConfirmY := 400, 185
 	v.deleteCharConfirmLabel.SetPosition(deleteConfirmX, deleteConfirmY)
 
-	animation, _ = d2asset.LoadAnimation(d2resource.CharacterSelectionSelectBox, d2resource.PaletteSky)
-	v.selectionBox, _ = v.uiManager.NewSprite(animation)
+	v.selectionBox, err = v.uiManager.NewSprite(d2resource.CharacterSelectionSelectBox, d2resource.PaletteSky)
+	if err != nil {
+		log.Print(err)
+	}
+
 	selBoxX, selBoxY := 37, 86
 	v.selectionBox.SetPosition(selBoxX, selBoxY)
 
-	animation, _ = d2asset.LoadAnimation(d2resource.PopUpOkCancel, d2resource.PaletteFechar)
-	v.okCancelBox, _ = v.uiManager.NewSprite(animation)
+	v.okCancelBox, err = v.uiManager.NewSprite(d2resource.PopUpOkCancel, d2resource.PaletteFechar)
+	if err != nil {
+		log.Print(err)
+	}
+
 	okCancelX, okCancelY := 270, 175
 	v.okCancelBox.SetPosition(okCancelX, okCancelY)
 
@@ -172,6 +201,7 @@ func (v *CharacterSelect) OnLoad(loading d2screen.LoadingState) {
 
 	for i := 0; i < 8; i++ {
 		offsetX, offsetY := rootLabelOffsetX, rootLabelOffsetY+((i/2)*95)
+
 		if i&1 > 0 {
 			offsetX = 385
 		}
@@ -181,10 +211,12 @@ func (v *CharacterSelect) OnLoad(loading d2screen.LoadingState) {
 		v.characterNameLabel[i].Color[0] = rgbaColor(lightBrown)
 
 		offsetY += labelHeight
+
 		v.characterStatsLabel[i] = v.uiManager.NewLabel(d2resource.Font16, d2resource.PaletteUnits)
 		v.characterStatsLabel[i].SetPosition(offsetX, offsetY)
 
 		offsetY += labelHeight
+
 		v.characterExpLabel[i] = v.uiManager.NewLabel(d2resource.Font16, d2resource.PaletteStatic)
 		v.characterExpLabel[i].SetPosition(offsetX, offsetY)
 		v.characterExpLabel[i].Color[0] = rgbaColor(lightGreen)
@@ -263,6 +295,7 @@ func (v *CharacterSelect) updateCharacterBoxes() {
 
 	for i := 0; i < 8; i++ {
 		idx := i + (v.charScrollbar.GetCurrentOffset() * 2)
+
 		if idx >= len(v.gameStates) {
 			v.characterNameLabel[i].SetText("")
 			v.characterStatsLabel[i].SetText("")
@@ -280,12 +313,13 @@ func (v *CharacterSelect) updateCharacterBoxes() {
 		v.characterExpLabel[i].SetText(d2ui.ColorTokenize(expText, d2ui.ColorTokenGreen))
 
 		heroType := v.gameStates[idx].HeroType
-		equipment := d2inventory.HeroObjects[heroType]
+		equipment := v.DefaultHeroItems[heroType]
 
-		// TODO: Generate or load the object from the actual player data...
-		v.characterImage[i] = d2mapentity.NewPlayer("", "", 0, 0, 0,
+		// https://github.com/OpenDiablo2/OpenDiablo2/issues/791
+		v.characterImage[i] = v.NewPlayer("", "", 0, 0, 0,
 			v.gameStates[idx].HeroType,
 			v.gameStates[idx].Stats,
+			v.gameStates[idx].Skills,
 			&equipment,
 		)
 	}
@@ -362,40 +396,60 @@ func (v *CharacterSelect) moveSelectionBox() {
 
 // OnMouseButtonDown is called when a mouse button is clicked
 func (v *CharacterSelect) OnMouseButtonDown(event d2interface.MouseEvent) bool {
-	if !v.showDeleteConfirmation {
-		if event.Button() == d2enum.MouseButtonLeft {
-			mx, my := event.X(), event.Y()
-
-			bw := selectionBoxWidth
-			bh := selectionBoxHeight
-			localMouseX := mx - selectionBoxOffsetX
-			localMouseY := my - selectionBoxOffsetY
-
-			if localMouseX > 0 && localMouseX < bw*2 && localMouseY >= 0 && localMouseY < bh*4 {
-				adjustY := localMouseY / bh
-				selectedIndex := adjustY * selectionBoxNumColumns
-
-				if localMouseX > bw {
-					selectedIndex++
-				}
-
-				if (v.charScrollbar.GetCurrentOffset()*2)+selectedIndex < len(v.gameStates) {
-					v.selectedCharacter = (v.charScrollbar.GetCurrentOffset() * 2) + selectedIndex
-					v.moveSelectionBox()
-				}
-			}
-
-			return true
-		}
+	if v.showDeleteConfirmation {
+		return false
 	}
 
-	return false
+	if event.Button() != d2enum.MouseButtonLeft {
+		return false
+	}
+
+	mx, my := event.X(), event.Y()
+
+	bw := selectionBoxWidth
+	bh := selectionBoxHeight
+	localMouseX := mx - selectionBoxOffsetX
+	localMouseY := my - selectionBoxOffsetY
+
+	// if Mouse is within character selection bounds.
+	if localMouseX > 0 && localMouseX < bw*2 && localMouseY >= 0 && localMouseY < bh*4 {
+		adjustY := localMouseY / bh
+		// sets current verticle index for selected character in left column.
+		selectedIndex := adjustY * selectionBoxNumColumns
+
+		// if selected character in left column should be in right column, add 1.
+		if localMouseX > bw {
+			selectedIndex++
+		}
+
+		// Make sure selection takes the scrollbar into account to make proper selection.
+		if (v.charScrollbar.GetCurrentOffset()*2)+selectedIndex < len(v.gameStates) {
+			selectedIndex = (v.charScrollbar.GetCurrentOffset() * 2) + selectedIndex
+		}
+
+		// if the selection box didn't move, check if it was a double click, otherwise set selectedCharacter to
+		// selectedIndex and move selection box over both.
+		if v.selectedCharacter == selectedIndex {
+			// We clicked twice within character selection box within  v.doubleClickTime seconds.
+			if (v.tickTimer - v.storedTickTimer) < doubleClickTime {
+				v.onOkButtonClicked()
+			}
+		} else if selectedIndex < len(v.gameStates) {
+			v.selectedCharacter = selectedIndex
+			v.moveSelectionBox()
+		}
+		// Keep track of when we last clicked so we can determine if we double clicked a character.
+		v.storedTickTimer = v.tickTimer
+	}
+
+	return true
 }
 
 // Advance runs the update logic on the Character Select screen
 func (v *CharacterSelect) Advance(tickTime float64) error {
 	for _, hero := range v.characterImage {
 		if hero != nil {
+			v.tickTimer += tickTime
 			hero.Advance(tickTime)
 		}
 	}
@@ -408,7 +462,11 @@ func (v *CharacterSelect) onDeleteCharButtonClicked() {
 }
 
 func (v *CharacterSelect) onDeleteCharacterConfirmClicked() {
-	_ = os.Remove(v.gameStates[v.selectedCharacter].FilePath)
+	err := os.Remove(v.gameStates[v.selectedCharacter].FilePath)
+	if err != nil {
+		log.Print(err)
+	}
+
 	v.charScrollbar.SetCurrentOffset(0)
 	v.refreshGameStates()
 	v.toggleDeleteCharacterDialog(false)
@@ -431,7 +489,11 @@ func (v *CharacterSelect) toggleDeleteCharacterDialog(showDialog bool) {
 }
 
 func (v *CharacterSelect) refreshGameStates() {
-	v.gameStates = d2player.GetAllPlayerStates()
+	gameStates, err := v.HeroStateFactory.GetAllHeroStates()
+	if err == nil {
+		v.gameStates = gameStates
+	}
+
 	v.updateCharacterBoxes()
 
 	if len(v.gameStates) > 0 {
@@ -451,4 +513,14 @@ func (v *CharacterSelect) refreshGameStates() {
 
 func (v *CharacterSelect) onOkButtonClicked() {
 	v.navigator.ToCreateGame(v.gameStates[v.selectedCharacter].FilePath, v.connectionType, v.connectionHost)
+}
+
+// OnUnload candles cleanup when this screen is closed
+func (v *CharacterSelect) OnUnload() error {
+	// https://github.com/OpenDiablo2/OpenDiablo2/issues/792
+	if err := v.inputManager.UnbindHandler(v); err != nil {
+		return err
+	}
+
+	return nil
 }

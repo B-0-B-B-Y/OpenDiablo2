@@ -7,19 +7,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common"
-
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
-
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
-
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
-	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
+)
+
+const (
+	subtilesPerTile = 5
 )
 
 type regionSpec struct {
@@ -87,52 +89,63 @@ func getRegions() []regionSpec {
 
 // MapEngineTest represents the MapEngineTest screen
 type MapEngineTest struct {
-	gameState     *d2player.PlayerState
-	mapEngine     *d2mapengine.MapEngine
-	mapRenderer   *d2maprenderer.MapRenderer
-	terminal      d2interface.Terminal
-	renderer      d2interface.Renderer
-	inputManager  d2interface.InputManager
-	audioProvider d2interface.AudioProvider
-	screen        *d2screen.ScreenManager
+	asset              *d2asset.AssetManager
+	playerStateFactory *d2hero.HeroStateFactory
+	playerState        *d2hero.HeroState
+	mapEngine          *d2mapengine.MapEngine
+	mapGen             *d2mapgen.MapGenerator
+	mapRenderer        *d2maprenderer.MapRenderer
+	terminal           d2interface.Terminal
+	renderer           d2interface.Renderer
+	inputManager       d2interface.InputManager
+	audioProvider      d2interface.AudioProvider
+	screen             *d2screen.ScreenManager
 
 	lastMouseX, lastMouseY int
 	selX, selY             int
 	selectedTile           *d2mapengine.MapTile
 
-	//TODO: this is region specific properties, should be refactored for multi-region rendering
+	// https://github.com/OpenDiablo2/OpenDiablo2/issues/806
 	currentRegion int
 	levelPreset   int
 	fileIndex     int
 	regionSpec    regionSpec
 	filesCount    int
-	debugVisLevel int
 }
 
 // CreateMapEngineTest creates the Map Engine Test screen and returns a pointer to it
 func CreateMapEngineTest(currentRegion,
 	levelPreset int,
+	asset *d2asset.AssetManager,
 	term d2interface.Terminal,
 	renderer d2interface.Renderer,
 	inputManager d2interface.InputManager,
 	audioProvider d2interface.AudioProvider,
 	screen *d2screen.ScreenManager,
-) *MapEngineTest {
-	result := &MapEngineTest{
-		currentRegion: currentRegion,
-		levelPreset:   levelPreset,
-		fileIndex:     0,
-		regionSpec:    regionSpec{},
-		filesCount:    0,
-		terminal:      term,
-		renderer:      renderer,
-		inputManager:  inputManager,
-		audioProvider: audioProvider,
-		screen:        screen,
+) (*MapEngineTest, error) {
+	heroStateFactory, err := d2hero.NewHeroStateFactory(asset)
+	if err != nil {
+		return nil, err
 	}
-	result.gameState = d2player.CreateTestGameState()
 
-	return result
+	result := &MapEngineTest{
+		currentRegion:      currentRegion,
+		levelPreset:        levelPreset,
+		fileIndex:          0,
+		regionSpec:         regionSpec{},
+		filesCount:         0,
+		asset:              asset,
+		terminal:           term,
+		renderer:           renderer,
+		inputManager:       inputManager,
+		audioProvider:      audioProvider,
+		screen:             screen,
+		playerStateFactory: heroStateFactory,
+	}
+
+	result.playerState = heroStateFactory.CreateTestGameState()
+
+	return result, nil
 }
 
 func (met *MapEngineTest) loadRegionByIndex(n, levelPreset, fileIndex int) {
@@ -167,21 +180,23 @@ func (met *MapEngineTest) loadRegionByIndex(n, levelPreset, fileIndex int) {
 		met.levelPreset = levelPreset
 	}
 
+	mapGen, _ := d2mapgen.NewMapGenerator(met.asset, met.mapEngine)
+	met.mapGen = mapGen
+
 	if n == 0 {
 		met.mapEngine.SetSeed(time.Now().UnixNano())
-		d2mapgen.GenerateAct1Overworld(met.mapEngine)
+		met.mapGen.GenerateAct1Overworld()
 	} else {
-		met.mapEngine = d2mapengine.CreateMapEngine() // necessary for map name update
+		met.mapEngine = d2mapengine.CreateMapEngine(met.asset) // necessary for map name update
 		met.mapEngine.SetSeed(time.Now().UnixNano())
 		met.mapEngine.GenerateMap(d2enum.RegionIdType(n), levelPreset, fileIndex)
-		//met.mapEngine.RegenerateWalkPaths()
 	}
 
 	met.mapRenderer.SetMapEngine(met.mapEngine)
 	position := d2vector.NewPosition(met.mapRenderer.WorldToOrtho(met.mapEngine.GetCenterPosition()))
 	met.mapRenderer.SetCameraPosition(&position)
 
-	musicDef := d2common.GetMusicDef(met.regionSpec.regionType)
+	musicDef := d2resource.GetMusicDef(met.regionSpec.regionType)
 
 	met.audioProvider.PlayBGM(musicDef.MusicFile)
 }
@@ -194,11 +209,12 @@ func (met *MapEngineTest) OnLoad(loading d2screen.LoadingState) {
 
 	loading.Progress(twentyPercent)
 
-	met.mapEngine = d2mapengine.CreateMapEngine()
+	met.mapEngine = d2mapengine.CreateMapEngine(met.asset)
 
 	loading.Progress(fiftyPercent)
 
-	met.mapRenderer = d2maprenderer.CreateMapRenderer(met.renderer, met.mapEngine, met.terminal, 0.0, 0.0)
+	met.mapRenderer = d2maprenderer.CreateMapRenderer(met.asset, met.renderer, met.mapEngine,
+		met.terminal, 0.0, 0.0)
 
 	loading.Progress(seventyPercent)
 	met.loadRegionByIndex(met.currentRegion, met.levelPreset, met.fileIndex)
@@ -206,6 +222,7 @@ func (met *MapEngineTest) OnLoad(loading d2screen.LoadingState) {
 
 // OnUnload releases the resources for the Map Engine Test screen
 func (met *MapEngineTest) OnUnload() error {
+	//  https://github.com/OpenDiablo2/OpenDiablo2/issues/792
 	if err := met.inputManager.UnbindHandler(met); err != nil {
 		return err
 	}
@@ -213,111 +230,144 @@ func (met *MapEngineTest) OnUnload() error {
 	return nil
 }
 
+const (
+	lineSmallOffsetY  = 12
+	lineNormalOffsetY = 16
+	lineSmallIndentX  = 10
+	lineNormalIndentX = 15
+	lineBigIndentX    = 170 // distance between text columns
+)
+
 // Render renders the Map Engine Test screen
 func (met *MapEngineTest) Render(screen d2interface.Surface) error {
 	met.mapRenderer.Render(screen)
 
-	screen.PushTranslation(0, 16)
-	screen.DrawTextf("N - next region, P - previous region")
-	screen.PushTranslation(0, 16)
-	screen.DrawTextf("Shift+N - next preset, Shift+P - previous preset")
-	screen.PushTranslation(0, 16)
-	screen.DrawTextf("Ctrl+N - next file, Ctrl+P - previous file")
-	screen.PushTranslation(0, 16)
-	screen.DrawTextf("Left click selects tile, right click unselects")
-	screen.PushTranslation(0, 16)
+	screen.PushTranslation(0, lineNormalOffsetY)
+	defer screen.Pop()
 
-	popN := 5
+	screen.DrawTextf("N - next region, P - previous region")
+
+	screen.PushTranslation(0, lineNormalOffsetY)
+	defer screen.Pop()
+
+	screen.DrawTextf("Shift+N - next preset, Shift+P - previous preset")
+
+	screen.PushTranslation(0, lineNormalOffsetY)
+	defer screen.Pop()
+
+	screen.DrawTextf("Ctrl+N - next file, Ctrl+P - previous file")
+
+	screen.PushTranslation(0, lineNormalOffsetY)
+	defer screen.Pop()
+
+	screen.DrawTextf("Left click selects tile, right click unselects")
+
+	screen.PushTranslation(0, lineNormalOffsetY)
+	defer screen.Pop()
 
 	if met.selectedTile == nil {
-		screen.PushTranslation(15, 16)
-		popN++
+		screen.PushTranslation(lineNormalIndentX, lineNormalOffsetY)
+		defer screen.Pop()
 
 		screen.DrawTextf("No tile selected")
 	} else {
-		screen.PushTranslation(10, 32)
+		screen.PushTranslation(lineSmallIndentX, lineNormalOffsetY)
+		defer screen.Pop()
+		screen.PushTranslation(0, lineNormalOffsetY) // extra vspace
+		defer screen.Pop()
+
 		screen.DrawTextf("Tile %v,%v", met.selX, met.selY)
 
-		screen.PushTranslation(15, 16)
+		screen.PushTranslation(lineNormalIndentX, lineNormalOffsetY)
+		defer screen.Pop()
+
 		screen.DrawTextf("Walls")
+
 		tpop := 0
 		for _, wall := range met.selectedTile.Components.Walls {
-			screen.PushTranslation(0, 12)
+			screen.PushTranslation(0, lineSmallOffsetY)
 			tpop++
 			tmpString := fmt.Sprintf("%#v", wall)
 			stringSlice := strings.Split(tmpString, " ")
 			tmp2 := strings.Split(stringSlice[0], "{")
 			stringSlice[0] = tmp2[1]
 			for _, str := range stringSlice {
-				screen.PushTranslation(0, 12)
+				screen.PushTranslation(0, lineSmallOffsetY)
 				tpop++
 				screen.DrawTextf(str)
 			}
 		}
+
 		screen.PopN(tpop)
 
-		screen.PushTranslation(170, 0)
+		screen.PushTranslation(lineBigIndentX, 0)
+		defer screen.Pop()
+
 		screen.DrawTextf("Floors")
+
 		tpop = 0
 		for _, floor := range met.selectedTile.Components.Floors {
-			screen.PushTranslation(0, 12)
+			screen.PushTranslation(0, lineSmallOffsetY)
 			tpop++
 			tmpString := fmt.Sprintf("%#v", floor)
 			stringSlice := strings.Split(tmpString, " ")
 			tmp2 := strings.Split(stringSlice[0], "{")
 			stringSlice[0] = tmp2[1]
 			for _, str := range stringSlice {
-				screen.PushTranslation(0, 12)
+				screen.PushTranslation(0, lineSmallOffsetY)
 				tpop++
 				screen.DrawTextf(str)
 			}
 		}
 		screen.PopN(tpop)
 
-		tpop = 0
-		screen.PushTranslation(170, 0)
+		screen.PushTranslation(lineBigIndentX, 0)
+		defer screen.Pop()
+
 		screen.DrawTextf("Shadows")
+
+		tpop = 0
 		for _, shadow := range met.selectedTile.Components.Shadows {
-			screen.PushTranslation(0, 12)
+			screen.PushTranslation(0, lineSmallOffsetY)
 			tpop++
 			tmpString := fmt.Sprintf("%#v", shadow)
 			stringSlice := strings.Split(tmpString, " ")
 			tmp2 := strings.Split(stringSlice[0], "{")
 			stringSlice[0] = tmp2[1]
 			for _, str := range stringSlice {
-				screen.PushTranslation(0, 12)
+				screen.PushTranslation(0, lineSmallOffsetY)
 				tpop++
 				screen.DrawTextf(str)
 			}
 		}
 		screen.PopN(tpop)
 
-		tpop = 0
-		screen.PushTranslation(170, 0)
+		screen.PushTranslation(lineBigIndentX, 0)
+		defer screen.Pop()
+
 		screen.DrawTextf("Substitutions")
+
+		tpop = 0
 		for _, subst := range met.selectedTile.Components.Substitutions {
-			screen.PushTranslation(0, 12)
+			screen.PushTranslation(0, lineSmallOffsetY)
 			tpop++
 			tmpString := fmt.Sprintf("%#v", subst)
 			stringSlice := strings.Split(tmpString, " ")
 			tmp2 := strings.Split(stringSlice[0], "{")
 			stringSlice[0] = tmp2[1]
 			for _, str := range stringSlice {
-				screen.PushTranslation(0, 12)
+				screen.PushTranslation(0, lineSmallOffsetY)
 				tpop++
 				screen.DrawTextf(str)
 			}
 		}
 		screen.PopN(tpop)
-
-		popN += 5
 	}
-
-	screen.PopN(popN)
 
 	return nil
 }
 
+// OnMouseMove is the mouse move handler
 func (met *MapEngineTest) OnMouseMove(event d2interface.MouseMoveEvent) bool {
 	mx, my := event.X(), event.Y()
 	met.lastMouseX = mx
@@ -326,20 +376,10 @@ func (met *MapEngineTest) OnMouseMove(event d2interface.MouseMoveEvent) bool {
 	return false
 }
 
+// OnMouseButtonDown handles mouse button down events
 func (met *MapEngineTest) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	if event.Button() == d2enum.MouseButtonLeft {
-		px, py := met.mapRenderer.ScreenToWorld(met.lastMouseX, met.lastMouseY)
-		met.selX = int(px)
-		met.selY = int(py)
-		met.selectedTile = met.mapEngine.TileAt(int(px), int(py))
-
-		camVect := met.mapRenderer.Camera.GetPosition().Vector
-
-		x, y := float64(met.lastMouseX-400)/5, float64(met.lastMouseY-300)/5
-		targetPosition := d2vector.NewPositionTile(x, y)
-		targetPosition.Add(&camVect)
-
-		met.mapRenderer.SetCameraTarget(&targetPosition)
+		met.handleLeftClick()
 
 		return true
 	}
@@ -353,25 +393,34 @@ func (met *MapEngineTest) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	return false
 }
 
+// OnMouseButtonRepeat handles repeated mouse clicks
 func (met *MapEngineTest) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 	if event.Button() == d2enum.MouseButtonLeft {
-		px, py := met.mapRenderer.ScreenToWorld(met.lastMouseX, met.lastMouseY)
-		met.selX = int(px)
-		met.selY = int(py)
-		met.selectedTile = met.mapEngine.TileAt(int(px), int(py))
-
-		camVect := met.mapRenderer.Camera.GetPosition().Vector
-
-		x, y := float64(met.lastMouseX-400)/5, float64(met.lastMouseY-300)/5
-		targetPosition := d2vector.NewPositionTile(x, y)
-		targetPosition.Add(&camVect)
-
-		met.mapRenderer.SetCameraTarget(&targetPosition)
+		met.handleLeftClick()
 
 		return true
 	}
 
 	return false
+}
+
+func (met *MapEngineTest) handleLeftClick() {
+	px, py := met.mapRenderer.ScreenToWorld(met.lastMouseX, met.lastMouseY)
+	met.selX = int(px)
+	met.selY = int(py)
+	met.selectedTile = met.mapEngine.TileAt(int(px), int(py))
+
+	camVect := met.mapRenderer.Camera.GetPosition().Vector
+
+	halfScreenWidth, halfScreenHeight := screenWidth>>1, screenHeight>>1
+
+	x := float64(met.lastMouseX-halfScreenWidth) / subtilesPerTile
+	y := float64(met.lastMouseY-halfScreenHeight) / subtilesPerTile
+
+	targetPosition := d2vector.NewPositionTile(x, y)
+	targetPosition.Add(&camVect)
+
+	met.mapRenderer.SetCameraTarget(&targetPosition)
 }
 
 // Advance runs the update logic on the Map Engine Test screen

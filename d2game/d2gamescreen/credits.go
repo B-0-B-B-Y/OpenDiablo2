@@ -8,9 +8,9 @@ import (
 	"path"
 	"strings"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
@@ -39,14 +39,17 @@ type Credits struct {
 	cyclesTillNextLine int
 	doneWithCredits    bool
 
+	asset     *d2asset.AssetManager
 	renderer  d2interface.Renderer
-	navigator Navigator
+	navigator d2interface.Navigator
 	uiManager *d2ui.UIManager
 }
 
 // CreateCredits creates an instance of the credits screen
-func CreateCredits(navigator Navigator, renderer d2interface.Renderer, ui *d2ui.UIManager) *Credits {
+func CreateCredits(navigator d2interface.Navigator, asset *d2asset.AssetManager, renderer d2interface.Renderer,
+	ui *d2ui.UIManager) *Credits {
 	result := &Credits{
+		asset:              asset,
 		labels:             make([]*labelItem, 0),
 		cycleTime:          0,
 		doneWithCredits:    false,
@@ -60,7 +63,6 @@ func CreateCredits(navigator Navigator, renderer d2interface.Renderer, ui *d2ui.
 }
 
 // LoadContributors loads the contributors data from file
-// TODO: use markdown for file and convert it to the suitable format
 func (v *Credits) LoadContributors() []string {
 	file, err := os.Open(path.Join("./", "CONTRIBUTORS"))
 	if err != nil || file == nil {
@@ -86,8 +88,13 @@ func (v *Credits) LoadContributors() []string {
 
 // OnLoad is called to load the resources for the credits screen
 func (v *Credits) OnLoad(loading d2screen.LoadingState) {
-	animation, _ := d2asset.LoadAnimation(d2resource.CreditsBackground, d2resource.PaletteSky)
-	v.creditsBackground, _ = v.uiManager.NewSprite(animation)
+	var err error
+
+	v.creditsBackground, err = v.uiManager.NewSprite(d2resource.CreditsBackground, d2resource.PaletteSky)
+	if err != nil {
+		log.Print(err)
+	}
+
 	v.creditsBackground.SetPosition(creditsX, creditsY)
 	loading.Progress(twentyPercent)
 
@@ -96,7 +103,7 @@ func (v *Credits) OnLoad(loading d2screen.LoadingState) {
 	v.exitButton.OnActivated(func() { v.onExitButtonClicked() })
 	loading.Progress(fourtyPercent)
 
-	fileData, err := d2asset.LoadFile(d2resource.CreditsText)
+	fileData, err := v.asset.LoadFile(d2resource.CreditsText)
 	if err != nil {
 		loading.Error(err)
 		return
@@ -104,7 +111,11 @@ func (v *Credits) OnLoad(loading d2screen.LoadingState) {
 
 	loading.Progress(sixtyPercent)
 
-	creditData, _ := d2common.Utf16BytesToString(fileData[2:])
+	creditData, err := d2util.Utf16BytesToString(fileData[2:])
+	if err != nil {
+		log.Print(err)
+	}
+
 	v.creditsText = strings.Split(creditData, "\r\n")
 
 	for i := range v.creditsText {

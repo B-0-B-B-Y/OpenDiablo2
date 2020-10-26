@@ -2,6 +2,8 @@ package d2netpacket
 
 import (
 	"encoding/json"
+	"log"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket/d2netpackettype"
 )
 
@@ -19,7 +21,11 @@ func CreateUpdateServerInfoPacket(seed int64, playerID string) NetPacket {
 		Seed:     seed,
 		PlayerID: playerID,
 	}
-	b, _ := json.Marshal(updateServerInfo)
+
+	b, err := json.Marshal(updateServerInfo)
+	if err != nil {
+		log.Print(err)
+	}
 
 	return NetPacket{
 		PacketType: d2netpackettype.UpdateServerInfo,
@@ -27,11 +33,13 @@ func CreateUpdateServerInfoPacket(seed int64, playerID string) NetPacket {
 	}
 }
 
+// UnmarshalUpdateServerInfo unmarshals the data to a UpdateServerInfoPacket struct
 func UnmarshalUpdateServerInfo(packet []byte) (UpdateServerInfoPacket, error) {
 	var resp UpdateServerInfoPacket
 
 	if err := json.Unmarshal(packet, &resp); err != nil {
 		return resp, err
 	}
+
 	return resp, nil
 }

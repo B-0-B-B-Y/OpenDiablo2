@@ -3,6 +3,8 @@ package d2ui
 import (
 	"log"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
@@ -10,13 +12,14 @@ import (
 
 // UIManager manages a collection of UI elements (buttons, textboxes, labels)
 type UIManager struct {
+	asset         *d2asset.AssetManager
 	renderer      d2interface.Renderer
 	inputManager  d2interface.InputManager
 	audio         d2interface.AudioProvider
 	widgets       []Widget
-	cursorButtons CursorButton // TODO (carrelld) convert dependent code and remove
-	CursorX       int          // TODO (carrelld) convert dependent code and remove
-	CursorY       int          // TODO (carrelld) convert dependent code and remove
+	cursorButtons CursorButton
+	CursorX       int
+	CursorY       int
 	pressedWidget Widget
 	clickSfx      d2interface.SoundEffect
 }
@@ -46,7 +49,11 @@ func (ui *UIManager) Reset() {
 
 // addWidget adds a widget to the UI manager
 func (ui *UIManager) addWidget(widget Widget) {
-	_ = ui.inputManager.BindHandler(widget)
+	err := ui.inputManager.BindHandler(widget)
+	if err != nil {
+		log.Print(err)
+	}
+
 	ui.widgets = append(ui.widgets, widget)
 
 	widget.bindManager(ui)
@@ -102,7 +109,10 @@ func (ui *UIManager) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 func (ui *UIManager) Render(target d2interface.Surface) {
 	for _, widget := range ui.widgets {
 		if widget.GetVisible() {
-			_ = widget.Render(target)
+			err := widget.Render(target)
+			if err != nil {
+				log.Print(err)
+			}
 		}
 	}
 }
@@ -119,7 +129,10 @@ func (ui *UIManager) contains(w Widget, x, y int) bool {
 func (ui *UIManager) Advance(elapsed float64) {
 	for _, widget := range ui.widgets {
 		if widget.GetVisible() {
-			_ = widget.Advance(elapsed)
+			err := widget.Advance(elapsed)
+			if err != nil {
+				log.Print(err)
+			}
 		}
 	}
 }
