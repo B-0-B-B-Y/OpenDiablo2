@@ -2,10 +2,11 @@ package d2gui
 
 import (
 	"errors"
+	"image/color"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 )
 
@@ -48,6 +49,9 @@ const (
 	PositionTypeVertical
 	PositionTypeHorizontal
 )
+
+// static check that Layout implements a widget
+var _ widget = &Layout{}
 
 // Layout is a gui element container which will automatically position/align gui elements.
 // Layouts are gui elements as well, so they can be nested in other layouts.
@@ -103,6 +107,14 @@ func (l *Layout) AddLayout(positionType PositionType) *Layout {
 	return layout
 }
 
+// AddLayoutFromSource adds a nested layout to this layout, given a position type.
+// Returns a pointer to the nested layout
+func (l *Layout) AddLayoutFromSource(source *Layout) *Layout {
+	l.entries = append(l.entries, &layoutEntry{widget: source})
+
+	return source
+}
+
 // AddSpacerStatic adds a spacer with explicitly defined height and width
 func (l *Layout) AddSpacerStatic(width, height int) *SpacerStatic {
 	spacer := createSpacerStatic(width, height)
@@ -155,7 +167,27 @@ func (l *Layout) AddLabel(text string, fontStyle FontStyle) (*Label, error) {
 		return nil, err
 	}
 
-	label := createLabel(l.renderer, text, font)
+	label, err := createLabel(l.renderer, text, font, d2util.Color(ColorWhite))
+	if err != nil {
+		return nil, err
+	}
+
+	l.entries = append(l.entries, &layoutEntry{widget: label})
+
+	return label, nil
+}
+
+// AddLabelWithColor given a string and a FontStyle and a Color, adds a text label as a layout entry
+func (l *Layout) AddLabelWithColor(text string, fontStyle FontStyle, col color.RGBA) (*Label, error) {
+	font, err := l.loadFont(fontStyle)
+	if err != nil {
+		return nil, err
+	}
+
+	label, err := createLabel(l.renderer, text, font, col)
+	if err != nil {
+		return nil, err
+	}
 
 	l.entries = append(l.entries, &layoutEntry{widget: label})
 
@@ -179,7 +211,7 @@ func (l *Layout) Clear() {
 	l.entries = nil
 }
 
-func (l *Layout) render(target d2interface.Surface) error {
+func (l *Layout) render(target d2interface.Surface) {
 	l.AdjustEntryPlacement()
 
 	for _, entry := range l.entries {
@@ -187,18 +219,12 @@ func (l *Layout) render(target d2interface.Surface) error {
 			continue
 		}
 
-		if err := l.renderEntry(entry, target); err != nil {
-			return err
-		}
+		l.renderEntry(entry, target)
 
 		if layoutDebug {
-			if err := l.renderEntryDebug(entry, target); err != nil {
-				return err
-			}
+			l.renderEntryDebug(entry, target)
 		}
 	}
-
-	return nil
 }
 
 func (l *Layout) advance(elapsed float64) error {
@@ -211,27 +237,27 @@ func (l *Layout) advance(elapsed float64) error {
 	return nil
 }
 
-func (l *Layout) renderEntry(entry *layoutEntry, target d2interface.Surface) error {
+func (l *Layout) renderEntry(entry *layoutEntry, target d2interface.Surface) {
 	target.PushTranslation(entry.x, entry.y)
 	defer target.Pop()
 
-	return entry.widget.render(target)
+	entry.widget.render(target)
 }
 
-func (l *Layout) renderEntryDebug(entry *layoutEntry, target d2interface.Surface) error {
+func (l *Layout) renderEntryDebug(entry *layoutEntry, target d2interface.Surface) {
 	target.PushTranslation(entry.x, entry.y)
 	defer target.Pop()
 
-	drawColor := rgbaColor(white)
+	drawColor := d2util.Color(white)
 	switch entry.widget.(type) {
 	case *Layout:
-		drawColor = rgbaColor(magenta)
+		drawColor = d2util.Color(magenta)
 	case *SpacerStatic, *SpacerDynamic:
-		drawColor = rgbaColor(grey2)
+		drawColor = d2util.Color(grey2)
 	case *Label:
-		drawColor = rgbaColor(green)
+		drawColor = d2util.Color(green)
 	case *Button:
-		drawColor = rgbaColor(yellow)
+		drawColor = d2util.Color(yellow)
 	}
 
 	target.DrawLine(entry.width, 0, drawColor)
@@ -244,8 +270,6 @@ func (l *Layout) renderEntryDebug(entry *layoutEntry, target d2interface.Surface
 	target.PushTranslation(0, entry.height)
 	target.DrawLine(entry.width, 0, drawColor)
 	target.Pop()
-
-	return nil
 }
 
 func (l *Layout) getContentSize() (width, height int) {
@@ -282,6 +306,7 @@ func (l *Layout) getSize() (width, height int) {
 func (l *Layout) onMouseButtonDown(event d2interface.MouseEvent) bool {
 	for _, entry := range l.entries {
 		if entry.IsIn(event) {
+			entry.widget.onMouseButtonClick(event)
 			entry.widget.onMouseButtonDown(event)
 			entry.mouseDown[event.Button()] = true
 		}
@@ -462,7 +487,7 @@ func (l *Layout) createButton(renderer d2interface.Renderer, text string,
 		return nil, loadErr
 	}
 
-	textColor := rgbaColor(grey)
+	textColor := d2util.Color(grey)
 	textWidth, textHeight := font.GetTextMetrics(text)
 	textX := half(buttonWidth) - half(textWidth)
 	textY := half(buttonHeight) - half(textHeight) + config.textOffset
@@ -471,10 +496,7 @@ func (l *Layout) createButton(renderer d2interface.Renderer, text string,
 	surfaces := make([]d2interface.Surface, surfaceCount)
 
 	for i := 0; i < surfaceCount; i++ {
-		surface, surfaceErr := renderer.NewSurface(buttonWidth, buttonHeight, d2enum.FilterNearest)
-		if surfaceErr != nil {
-			return nil, surfaceErr
-		}
+		surface := renderer.NewSurface(buttonWidth, buttonHeight)
 
 		segX, segY, frame := config.segmentsX, config.segmentsY, i
 		if segErr := renderSegmented(animation, segX, segY, frame, surface); segErr != nil {
@@ -492,7 +514,7 @@ func (l *Layout) createButton(renderer d2interface.Renderer, text string,
 		}
 
 		surface.PushTranslation(textX+textOffsetX, textY+textOffsetY)
-		surfaceErr = font.RenderText(text, surface)
+		surfaceErr := font.RenderText(text, surface)
 		surface.Pop()
 
 		if surfaceErr != nil {

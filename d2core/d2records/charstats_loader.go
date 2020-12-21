@@ -1,12 +1,11 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
+// nolint:funlen // cant reduce
 func charStatsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(CharStats)
 
@@ -39,7 +38,7 @@ func charStatsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	}
 
 	for d.Next() {
-		record := &CharStatsRecord{
+		record := &CharStatRecord{
 			Class: stringMap[d.String("class")],
 
 			InitStr:     d.Number("str"),
@@ -137,7 +136,7 @@ func charStatsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d CharStats records", len(records))
+	r.Debugf("Loaded %d CharStat records", len(records))
 
 	r.Character.Stats = records
 

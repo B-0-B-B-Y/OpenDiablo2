@@ -1,13 +1,11 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
-// LoadInventory loads all of the inventory records from inventory.txt
+// nolint:funlen // cant reduce
 func inventoryLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(Inventory)
 
@@ -132,7 +130,7 @@ func inventoryLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d Inventory Panel records", len(records))
+	r.Debugf("Loaded %d Inventory records", len(records))
 
 	r.Layout.Inventory = records
 

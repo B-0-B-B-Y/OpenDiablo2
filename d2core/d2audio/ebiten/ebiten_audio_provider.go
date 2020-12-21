@@ -2,34 +2,35 @@
 package ebiten
 
 import (
-	"log"
+	"io"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 
-	"github.com/hajimehoshi/ebiten/audio"
-	"github.com/hajimehoshi/ebiten/audio/wav"
+	"github.com/hajimehoshi/ebiten/v2/audio"
+	"github.com/hajimehoshi/ebiten/v2/audio/wav"
 )
 
 const sampleRate = 44100
 
+const logPrefix = "Ebiten Audio Provider"
+
 var _ d2interface.AudioProvider = &AudioProvider{} // Static check to confirm struct conforms to interface
 
 // CreateAudio creates an instance of ebiten's audio provider
-func CreateAudio(am *d2asset.AssetManager) (*AudioProvider, error) {
+func CreateAudio(l d2util.LogLevel, am *d2asset.AssetManager) *AudioProvider {
 	result := &AudioProvider{
 		asset: am,
 	}
 
-	var err error
-	result.audioContext, err = audio.NewContext(sampleRate)
+	result.Logger = d2util.NewLogger()
+	result.Logger.SetLevel(l)
+	result.Logger.SetPrefix(logPrefix)
 
-	if err != nil {
-		log.Fatal(err)
-		return nil, err
-	}
+	result.audioContext = audio.NewContext(sampleRate)
 
-	return result, nil
+	return result
 }
 
 // AudioProvider represents a provider capable of playing audio
@@ -37,9 +38,12 @@ type AudioProvider struct {
 	asset        *d2asset.AssetManager
 	audioContext *audio.Context // The Audio context
 	bgmAudio     *audio.Player  // The audio player
+	bgmStream    *wav.Stream
 	lastBgm      string
 	sfxVolume    float64
 	bgmVolume    float64
+
+	*d2util.Logger
 }
 
 // PlayBGM loads an audio stream and plays it in the background
@@ -51,11 +55,7 @@ func (eap *AudioProvider) PlayBGM(song string) {
 	eap.lastBgm = song
 
 	if song == "" && eap.bgmAudio != nil && eap.bgmAudio.IsPlaying() {
-		err := eap.bgmAudio.Pause()
-		if err != nil {
-			log.Print(err)
-		}
-
+		eap.bgmAudio.Pause()
 		return
 	}
 
@@ -63,7 +63,7 @@ func (eap *AudioProvider) PlayBGM(song string) {
 		err := eap.bgmAudio.Close()
 
 		if err != nil {
-			log.Panic(err)
+			eap.Fatal(err.Error())
 		}
 	}
 
@@ -73,17 +73,21 @@ func (eap *AudioProvider) PlayBGM(song string) {
 		panic(err)
 	}
 
-	d, err := wav.Decode(eap.audioContext, audioStream)
-
-	if err != nil {
-		log.Fatal(err)
+	if _, err = audioStream.Seek(0, io.SeekStart); err != nil {
+		eap.Fatal(err.Error())
 	}
 
-	s := audio.NewInfiniteLoop(d, d.Length())
+	eap.bgmStream, err = wav.Decode(eap.audioContext, audioStream)
+
+	if err != nil {
+		eap.Fatal(err.Error())
+	}
+
+	s := audio.NewInfiniteLoop(eap.bgmStream, eap.bgmStream.Length())
 	eap.bgmAudio, err = audio.NewPlayer(eap.audioContext, s)
 
 	if err != nil {
-		log.Fatal(err)
+		eap.Fatal(err.Error())
 	}
 
 	eap.bgmAudio.SetVolume(eap.bgmVolume)
@@ -95,11 +99,7 @@ func (eap *AudioProvider) PlayBGM(song string) {
 		panic(err)
 	}
 
-	err = eap.bgmAudio.Play()
-
-	if err != nil {
-		panic(err)
-	}
+	eap.bgmAudio.Play()
 }
 
 // LoadSound loads a sound affect so that it canb e played
@@ -128,7 +128,7 @@ func (eap *AudioProvider) createSoundEffect(sfx string, context *audio.Context,
 	loop bool) *SoundEffect {
 	result := &SoundEffect{}
 
-	soundFile := "/data/global/sfx/"
+	soundFile := "data/global/sfx/"
 
 	if _, exists := eap.asset.Records.Sound.Details[sfx]; exists {
 		soundEntry := eap.asset.Records.Sound.Details[sfx]
@@ -140,7 +140,7 @@ func (eap *AudioProvider) createSoundEffect(sfx string, context *audio.Context,
 	audioData, err := eap.asset.LoadFileStream(soundFile)
 
 	if err != nil {
-		audioData, err = eap.asset.LoadFileStream("/data/global/music/" + sfx)
+		audioData, err = eap.asset.LoadFileStream("data/global/music/" + sfx)
 	}
 
 	if err != nil {
@@ -150,7 +150,7 @@ func (eap *AudioProvider) createSoundEffect(sfx string, context *audio.Context,
 	d, err := wav.Decode(context, audioData)
 
 	if err != nil {
-		log.Fatal(err)
+		eap.Fatal(err.Error())
 	}
 
 	var player *audio.Player
@@ -165,7 +165,7 @@ func (eap *AudioProvider) createSoundEffect(sfx string, context *audio.Context,
 	}
 
 	if err != nil {
-		log.Fatal(err)
+		eap.Fatal(err.Error())
 	}
 
 	result.player = player

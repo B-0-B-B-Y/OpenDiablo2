@@ -1,8 +1,9 @@
 package d2records
 
 import (
-	"log"
 	"testing"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 
@@ -13,9 +14,9 @@ import (
 func TestIndexObjects(t *testing.T) {
 	assert := testify.New(t)
 
-	r, err := NewRecordManager()
+	r, err := NewRecordManager(d2util.LogLevelDefault)
 	if err != nil {
-		log.Print(err)
+		t.Error(err)
 	}
 
 	testObjects := []ObjectLookupRecord{

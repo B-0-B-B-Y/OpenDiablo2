@@ -4,18 +4,22 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"log"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 )
+
+// static check if Sprite implemented Widget
+var _ Widget = &Sprite{}
 
 // Sprite is a positioned visual object.
 type Sprite struct {
-	x         int
-	y         int
+	*BaseWidget
 	animation d2interface.Animation
+
+	*d2util.Logger
 }
 
 const (
@@ -29,34 +33,42 @@ func (ui *UIManager) NewSprite(animationPath, palettePath string) (*Sprite, erro
 		return nil, fmt.Errorf(errNoAnimation)
 	}
 
-	err = animation.BindRenderer(ui.renderer)
-	if err != nil {
-		return nil, err
-	}
+	animation.BindRenderer(ui.renderer)
 
-	return &Sprite{animation: animation}, nil
+	base := NewBaseWidget(ui)
+
+	return &Sprite{
+		BaseWidget: base,
+		animation:  animation,
+		Logger:     ui.Logger,
+	}, nil
 }
 
 // Render renders the sprite on the given surface
-func (s *Sprite) Render(target d2interface.Surface) error {
+func (s *Sprite) Render(target d2interface.Surface) {
 	_, frameHeight := s.animation.GetCurrentFrameSize()
 
 	target.PushTranslation(s.x, s.y-frameHeight)
 	defer target.Pop()
 
-	return s.animation.Render(target)
+	s.animation.Render(target)
+}
+
+// GetSurface returns the surface of the sprite at the given frame
+func (s *Sprite) GetSurface() d2interface.Surface {
+	return s.animation.GetCurrentFrameSurface()
 }
 
 // RenderSection renders the section of the sprite enclosed by bounds
-func (s *Sprite) RenderSection(sfc d2interface.Surface, bound image.Rectangle) error {
+func (s *Sprite) RenderSection(sfc d2interface.Surface, bound image.Rectangle) {
 	sfc.PushTranslation(s.x, s.y-bound.Dy())
 	defer sfc.Pop()
 
-	return s.animation.RenderSection(sfc, bound)
+	s.animation.RenderSection(sfc, bound)
 }
 
 // RenderSegmented renders a sprite that is internally segmented as frames
-func (s *Sprite) RenderSegmented(target d2interface.Surface, segmentsX, segmentsY, frameOffset int) error {
+func (s *Sprite) RenderSegmented(target d2interface.Surface, segmentsX, segmentsY, frameOffset int) {
 	var currentY int
 
 	for y := 0; y < segmentsY; y++ {
@@ -65,16 +77,12 @@ func (s *Sprite) RenderSegmented(target d2interface.Surface, segmentsX, segments
 		for x := 0; x < segmentsX; x++ {
 			idx := x + y*segmentsX + frameOffset*segmentsX*segmentsY
 			if err := s.animation.SetCurrentFrame(idx); err != nil {
-				return err
+				s.Errorf("Error while setting frame (%d): %s", idx, err)
 			}
 
 			target.PushTranslation(s.x+currentX, s.y+currentY)
-			err := s.animation.Render(target)
+			s.animation.Render(target)
 			target.Pop()
-
-			if err != nil {
-				return err
-			}
 
 			frameWidth, frameHeight := s.GetCurrentFrameSize()
 			maxFrameHeight = d2math.MaxInt(maxFrameHeight, frameHeight)
@@ -83,19 +91,11 @@ func (s *Sprite) RenderSegmented(target d2interface.Surface, segmentsX, segments
 
 		currentY += maxFrameHeight
 	}
-
-	return nil
 }
 
-// SetPosition places the sprite in 2D
-func (s *Sprite) SetPosition(x, y int) {
-	s.x = x
-	s.y = y
-}
-
-// GetPosition retrieves the 2D position of the sprite
-func (s *Sprite) GetPosition() (x, y int) {
-	return s.x, s.y
+// GetSize returns the size of the current frame
+func (s *Sprite) GetSize() (width, height int) {
+	return s.GetCurrentFrameSize()
 }
 
 // GetFrameSize gets the Size(width, height) of a indexed frame.
@@ -157,7 +157,7 @@ func (s *Sprite) SetCurrentFrame(frameIndex int) error {
 func (s *Sprite) Rewind() {
 	err := s.animation.SetCurrentFrame(0)
 	if err != nil {
-		log.Print(err)
+		s.Error(err.Error())
 	}
 }
 

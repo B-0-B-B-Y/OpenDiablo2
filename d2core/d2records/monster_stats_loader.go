@@ -1,18 +1,16 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
-// LoadMonStats loads monstats
+// nolint:funlen // cant reduce
 func monsterStatsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(MonStats)
 
 	for d.Next() {
-		record := &MonStatsRecord{
+		record := &MonStatRecord{
 			Key:                            d.String("Id"),
 			ID:                             d.Number("hcIdx"),
 			BaseKey:                        d.String("BaseId"),
@@ -274,7 +272,7 @@ func monsterStatsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d MonStats records", len(records))
+	r.Debugf("Loaded %d MonStat records", len(records))
 
 	r.Monster.Stats = records
 

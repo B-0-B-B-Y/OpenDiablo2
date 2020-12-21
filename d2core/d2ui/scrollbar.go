@@ -1,8 +1,6 @@
 package d2ui
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 )
@@ -15,11 +13,12 @@ const (
 	scrollbarWidth         = 10
 )
 
+// static check that Scrollbar implements clickable widget
+var _ ClickableWidget = &Scrollbar{}
+
 // Scrollbar is a vertical slider ui element
 type Scrollbar struct {
-	manager         *UIManager
-	x, y, height    int
-	visible         bool
+	*BaseWidget
 	enabled         bool
 	currentOffset   int
 	maxOffset       int
@@ -32,16 +31,17 @@ type Scrollbar struct {
 func (ui *UIManager) NewScrollbar(x, y, height int) *Scrollbar {
 	scrollbarSprite, err := ui.NewSprite(d2resource.Scrollbar, d2resource.PaletteSky)
 	if err != nil {
-		log.Print(err)
+		ui.Error(err.Error())
 		return nil
 	}
 
+	base := NewBaseWidget(ui)
+	base.SetPosition(x, y)
+	base.height = height
+
 	result := &Scrollbar{
-		visible:         true,
+		BaseWidget:      base,
 		enabled:         true,
-		x:               x,
-		y:               y,
-		height:          height,
 		scrollbarSprite: scrollbarSprite,
 	}
 
@@ -104,9 +104,9 @@ func (v *Scrollbar) GetLastDirChange() int {
 }
 
 // Render renders the scrollbar to the given surface
-func (v *Scrollbar) Render(target d2interface.Surface) error {
+func (v *Scrollbar) Render(target d2interface.Surface) {
 	if !v.visible || v.maxOffset == 0 {
-		return nil
+		return
 	}
 
 	offset := 0
@@ -117,18 +117,14 @@ func (v *Scrollbar) Render(target d2interface.Surface) error {
 
 	v.scrollbarSprite.SetPosition(v.x, v.y)
 
-	if err := v.scrollbarSprite.RenderSegmented(target, 1, 1, 0+offset); err != nil {
-		return err
-	}
+	v.scrollbarSprite.RenderSegmented(target, 1, 1, 0+offset)
 
 	v.scrollbarSprite.SetPosition(v.x, v.y+v.height-scrollbarSpriteOffsetY) // what is the magic?
 
-	if err := v.scrollbarSprite.RenderSegmented(target, 1, 1, 1+offset); err != nil {
-		return err
-	}
+	v.scrollbarSprite.RenderSegmented(target, 1, 1, 1+offset)
 
 	if v.maxOffset == 0 || v.currentOffset < 0 || v.currentOffset > v.maxOffset {
-		return nil
+		return
 	}
 
 	v.scrollbarSprite.SetPosition(v.x, v.y+10+v.getBarPosition())
@@ -139,16 +135,7 @@ func (v *Scrollbar) Render(target d2interface.Surface) error {
 		offset++
 	}
 
-	if err := v.scrollbarSprite.RenderSegmented(target, 1, 1, offset); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// bindManager binds the scrollbar to the UI manager
-func (v *Scrollbar) bindManager(manager *UIManager) {
-	v.manager = manager
+	v.scrollbarSprite.RenderSegmented(target, 1, 1, offset)
 }
 
 // Advance advances the scrollbar sprite
@@ -159,27 +146,6 @@ func (v *Scrollbar) Advance(elapsed float64) error {
 // GetSize returns the scrollbar width and height
 func (v *Scrollbar) GetSize() (width, height int) {
 	return scrollbarWidth, v.height
-}
-
-// SetPosition sets the scrollbar x,y position
-func (v *Scrollbar) SetPosition(x, y int) {
-	v.x = x
-	v.y = y
-}
-
-// GetPosition returns the scrollbar x,y position
-func (v *Scrollbar) GetPosition() (x, y int) {
-	return v.x, v.y
-}
-
-// GetVisible returns whether or not the scrollbar is visible
-func (v *Scrollbar) GetVisible() bool {
-	return v.visible
-}
-
-// SetVisible sets the scrollbar visibility state
-func (v *Scrollbar) SetVisible(visible bool) {
-	v.visible = visible
 }
 
 // SetMaxOffset sets the maximum offset of the scrollbar

@@ -1,8 +1,6 @@
 package d2gui
 
 import (
-	"image/color"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
 )
@@ -20,12 +18,8 @@ func renderSegmented(animation d2interface.Animation, segmentsX, segmentsY, fram
 			}
 
 			target.PushTranslation(x+currentX, y+currentY)
-			err := animation.Render(target)
+			animation.Render(target)
 			target.Pop()
-
-			if err != nil {
-				return err
-			}
 
 			width, height := animation.GetCurrentFrameSize()
 			maxHeight = d2math.MaxInt(maxHeight, height)
@@ -40,29 +34,4 @@ func renderSegmented(animation d2interface.Animation, segmentsX, segmentsY, fram
 
 func half(n int) int {
 	return n / 2
-}
-
-func rgbaColor(rgba uint32) color.RGBA {
-	result := color.RGBA{}
-	a, b, g, r := 0, 1, 2, 3
-	byteWidth := 8
-	byteMask := 0xff
-
-	for idx := 0; idx < 4; idx++ {
-		shift := idx * byteWidth
-		component := uint8(rgba>>shift) & uint8(byteMask)
-
-		switch idx {
-		case a:
-			result.A = component
-		case b:
-			result.B = component
-		case g:
-			result.G = component
-		case r:
-			result.R = component
-		}
-	}
-
-	return result
 }

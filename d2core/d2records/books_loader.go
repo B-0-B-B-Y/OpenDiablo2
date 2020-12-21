@@ -1,8 +1,6 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
@@ -10,7 +8,7 @@ func booksLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(Books)
 
 	for d.Next() {
-		record := &BooksRecord{
+		record := &BookRecord{
 			Name:            d.String("Name"),
 			Namco:           d.String("Namco"),
 			Completed:       d.String("Completed"),
@@ -30,7 +28,7 @@ func booksLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		panic(d.Err)
 	}
 
-	log.Printf("Loaded %d book items", len(records))
+	r.Debugf("Loaded %d Book records", len(records))
 
 	r.Item.Books = records
 

@@ -2,6 +2,12 @@ package d2resource
 
 // Paths of the resources inside the mpq files.
 const (
+	// --- Language
+
+	LocalLanguage      = "/data/local/use"
+	LanguageFontToken  = "{LANG_FONT}" //nolint:gosec // this is just a format string
+	LanguageTableToken = "{LANG}"
+
 	// --- Screens ---
 
 	LoadingScreen = "/data/global/ui/Loading/loadingscreen.dc6"
@@ -19,7 +25,21 @@ const (
 	// --- Credits ---
 
 	CreditsBackground = "/data/global/ui/CharSelect/creditsbckgexpand.dc6"
-	CreditsText       = "/data/local/ui/{LANG}/ExpansionCredits.txt"
+	CreditsText       = "/data/local/ui/" + LanguageTableToken + "/ExpansionCredits.txt"
+
+	// --- Cinematics ---
+
+	CinematicsBackground = "/data/global/ui/FrontEnd/CinematicsSelectionEXP.dc6"
+
+	// --- Video Paths ---
+
+	Act1Intro = "/data/local/video/" + LanguageTableToken + "/d2intro640x292.bik"
+	Act2Intro = "/data/local/video/" + LanguageTableToken + "/act02start640x292.bik"
+	Act3Intro = "/data/local/video/" + LanguageTableToken + "/act03start640x292.bik"
+	Act4Intro = "/data/local/video/" + LanguageTableToken + "/act04start640x292.bik"
+	Act4Outro = "/data/local/video/" + LanguageTableToken + "/act04end640x292.bik"
+	Act5Intro = "/data/local/video/" + LanguageTableToken + "/d2x_intro_640x292.bik"
+	Act5Outro = "/data/local/video/" + LanguageTableToken + "/d2x_out_640x292.bik"
 
 	// --- Character Select Screen ---
 
@@ -89,6 +109,63 @@ const (
 	GameGlobeOverlap    = "/data/global/ui/PANEL/overlap.DC6"
 	HealthManaIndicator = "/data/global/ui/PANEL/hlthmana.DC6"
 	AddSkillButton      = "/data/global/ui/PANEL/level.DC6"
+	MoveGoldDialog      = "/data/global/ui/menu/dialogbackground.DC6"
+	WPTabs              = "/data/global/ui/menu/expwaygatetabs.dc6"
+	WPBg                = "/data/global/ui/menu/waygatebackground.dc6"
+	WPIcons             = "/data/global/ui/menu/waygateicons.dc6"
+	UpDownArrows        = "/data/global/ui/BIGMENU/numberarrows.dc6"
+
+	// --- Escape Menu ---
+	// main
+	EscapeOptions      = "/data/local/ui/" + LanguageTableToken + "/options.dc6"
+	EscapeExit         = "/data/local/ui/" + LanguageTableToken + "/exit.dc6"
+	EscapeReturnToGame = "/data/local/ui/" + LanguageTableToken + "/returntogame.dc6"
+	// options
+	EscapeOptSoundOptions   = "/data/local/ui/" + LanguageTableToken + "/soundoptions.dc6"
+	EscapeOptVideoOptions   = "/data/local/ui/" + LanguageTableToken + "/videoOptions.dc6"
+	EscapeOptAutoMapOptions = "/data/local/ui/" + LanguageTableToken + "/automapOptions.dc6"
+	EscapeOptCfgOptions     = "/data/local/ui/" + LanguageTableToken + "/cfgOptions.dc6"
+	EscapeOptPrevious       = "/data/local/ui/" + LanguageTableToken + "/previous.dc6"
+
+	// sound options
+	EscapeSndOptSoundVolume = "/data/local/ui/" + LanguageTableToken + "/sound.dc6"
+	EscapeSndOptMusicVolume = "/data/local/ui/" + LanguageTableToken + "/music.dc6"
+	EscapeSndOpt3DBias      = "/data/local/ui/" + LanguageTableToken + "/3dbias.dc6"
+	// EscapeSndOptHWAcceleration =
+	// EscapeSndOptENVEffects =
+	EscapeSndOptNPCSpeech             = "/data/local/ui/" + LanguageTableToken + "/npcspeech.dc6"
+	EscapeSndOptNPCSpeechAudioAndText = "/data/local/ui/" + LanguageTableToken + "/audiotext.dc6"
+	EscapeSndOptNPCSpeechAudioOnly    = "/data/local/ui/" + LanguageTableToken + "/audioonly.dc6"
+	EscapeSndOptNPCSpeechTextOnly     = "/data/local/ui/" + LanguageTableToken + "/textonly.dc6"
+
+	// video options
+	EscapeVidOptRes          = "/data/local/ui/" + LanguageTableToken + "/resolution.dc6"
+	EscapeVidOptLightQuality = "/data/local/ui/" + LanguageTableToken + "/lightquality.dc6"
+	EscapeVidOptBlendShadow  = "/data/local/ui/" + LanguageTableToken + "/blendshadow.dc6"
+	EscapeVidOptPerspective  = "/data/local/ui/" + LanguageTableToken + "/prespective.dc6"
+	EscapeVidOptGamma        = "/data/local/ui/" + LanguageTableToken + "/gamma.dc6"
+	EscapeVidOptContrast     = "/data/local/ui/" + LanguageTableToken + "/contrast.dc6"
+
+	// auto map
+	EscapeAutoMapOptSize   = "/data/local/ui/" + LanguageTableToken + "/automapmode.dc6"
+	EscapeAutoMapOptFade   = "/data/local/ui/" + LanguageTableToken + "/automapfade.dc6"
+	EscapeAutoMapOptCenter = "/data/local/ui/" + LanguageTableToken + "/automapcenter.dc6"
+	EscapeAutoMapOptNames  = "/data/local/ui/" + LanguageTableToken + "/automappartynames.dc6"
+
+	// automap size
+	EscapeAutoMapOptFullScreen = "/data/local/ui/" + LanguageTableToken + "/full.dc6"
+	EscapeAutoMapOptMiniMap    = "/data/local/ui/" + LanguageTableToken + "/mini.dc6"
+
+	// resolutions
+	EscapeVideoOptRes640x480 = "/data/local/ui/" + LanguageTableToken + "/640x480.dc6"
+	EscapeVideoOptRes800x600 = "/data/local/ui/" + LanguageTableToken + "/800x800.dc6"
+
+	EscapeOn            = "/data/local/ui/" + LanguageTableToken + "/smallon.dc6"
+	EscapeOff           = "/data/local/ui/" + LanguageTableToken + "/smalloff.dc6"
+	EscapeYes           = "/data/local/ui/" + LanguageTableToken + "/smallyes.dc6"
+	EscapeNo            = "/data/local/ui/" + LanguageTableToken + "/smallno.dc6"
+	EscapeSlideBar      = "/data/global/ui/widgets/optbarc.dc6"
+	EscapeSlideBarSkull = "/data/global/ui/widgets/optskull.dc6"
 
 	// --- Help Overlay ---
 
@@ -97,18 +174,32 @@ const (
 	HelpYellowBullet = "/data/global/ui/MENU/helpyellowbullet.DC6"
 	HelpWhiteBullet  = "/data/global/ui/MENU/helpwhitebullet.DC6"
 
+	// Box pieces, used in all in game boxes like npc interaction menu on click,
+	// the chat window and the key binding menu
+	BoxPieces = "/data/global/ui/MENU/boxpieces.DC6"
+
+	// TextSlider contains the pieces to build a scrollbar in the
+	// menus, such as the one in the configure keys menu
+	TextSlider = "/data/global/ui/MENU/textslid.DC6"
+
 	// Issue #685 - used in the mini-panel
 	GameSmallMenuButton = "/data/global/ui/PANEL/menubutton.DC6"
 	SkillIcon           = "/data/global/ui/PANEL/Skillicon.DC6"
+
+	// --- Quest Log---
+	QuestLogBg              = "/data/global/ui/MENU/questbackground.dc6"
+	QuestLogDone            = "/data/global/ui/MENU/questdone.dc6"
+	QuestLogTabs            = "/data/global/ui/MENU/expquesttabs.dc6"
+	QuestLogQDescrBtn       = "/data/global/ui/MENU/questlast.dc6"
+	QuestLogSocket          = "/data/global/ui/MENU/questsockets.dc6"
+	QuestLogAQuestAnimation = "/data/global/ui/MENU/a%dq%d.dc6"
+	QuestLogDoneSfx         = "cursor/questdone.wav"
 
 	// --- Mouse Pointers ---
 
 	CursorDefault = "/data/global/ui/CURSOR/ohand.DC6"
 
 	// --- Fonts & Locale (strings) ---
-
-	LanguageFontToken    = "{LANG_FONT}" //nolint:gosec // this is just a format string
-	LanguageTableToken   = "{LANG}"
 	Font6                = "/data/local/FONT/" + LanguageFontToken + "/font6"
 	Font8                = "/data/local/FONT/" + LanguageFontToken + "/font8"
 	Font16               = "/data/local/FONT/" + LanguageFontToken + "/font16"
@@ -138,6 +229,14 @@ const (
 	Checkbox          = "/data/global/ui/FrontEnd/clickbox.dc6"
 	Scrollbar         = "/data/global/ui/PANEL/scrollbar.dc6"
 
+	PopUpLarge     = "/data/global/ui/FrontEnd/PopUpLarge.dc6"
+	PopUpLargest   = "/data/global/ui/FrontEnd/PopUpLargest.dc6"
+	PopUpWide      = "/data/global/ui/FrontEnd/PopUpWide.dc6"
+	PopUpOk        = "/data/global/ui/FrontEnd/PopUpOk.dc6"
+	PopUpOk2       = "/data/global/ui/FrontEnd/PopUpOk.dc6"
+	PopUpOkCancel2 = "/data/global/ui/FrontEnd/PopUpOkCancel2.dc6"
+	PopUp340x224   = "/data/global/ui/FrontEnd/PopUp_340x224.dc6"
+
 	// --- GAME UI ---
 
 	PentSpin        = "/data/global/ui/CURSOR/pentspin.DC6"
@@ -145,16 +244,18 @@ const (
 	MinipanelSmall  = "/data/global/ui/PANEL/minipanel_s.dc6"
 	MinipanelButton = "/data/global/ui/PANEL/minipanelbtn.DC6"
 
-	Frame                   = "/data/global/ui/PANEL/800borderframe.dc6"
-	InventoryCharacterPanel = "/data/global/ui/PANEL/invchar6.DC6"
-	InventoryWeaponsTab     = "/data/global/ui/PANEL/invchar6Tab.DC6"
-	SkillsPanelAmazon       = "/data/global/ui/SPELLS/skltree_a_back.DC6"
-	SkillsPanelBarbarian    = "/data/global/ui/SPELLS/skltree_b_back.DC6"
-	SkillsPanelDruid        = "/data/global/ui/SPELLS/skltree_d_back.DC6"
-	SkillsPanelAssassin     = "/data/global/ui/SPELLS/skltree_i_back.DC6"
-	SkillsPanelNecromancer  = "/data/global/ui/SPELLS/skltree_n_back.DC6"
-	SkillsPanelPaladin      = "/data/global/ui/SPELLS/skltree_p_back.DC6"
-	SkillsPanelSorcerer     = "/data/global/ui/SPELLS/skltree_s_back.DC6"
+	Frame                     = "/data/global/ui/PANEL/800borderframe.dc6"
+	InventoryCharacterPanel   = "/data/global/ui/PANEL/invchar6.DC6"
+	HeroStatsPanelStatsPoints = "/data/global/ui/PANEL/skillpoints.dc6"
+	HeroStatsPanelSocket      = "/data/global/ui/PANEL/levelsocket.dc6"
+	InventoryWeaponsTab       = "/data/global/ui/PANEL/invchar6Tab.DC6"
+	SkillsPanelAmazon         = "/data/global/ui/SPELLS/skltree_a_back.DC6"
+	SkillsPanelBarbarian      = "/data/global/ui/SPELLS/skltree_b_back.DC6"
+	SkillsPanelDruid          = "/data/global/ui/SPELLS/skltree_d_back.DC6"
+	SkillsPanelAssassin       = "/data/global/ui/SPELLS/skltree_i_back.DC6"
+	SkillsPanelNecromancer    = "/data/global/ui/SPELLS/skltree_n_back.DC6"
+	SkillsPanelPaladin        = "/data/global/ui/SPELLS/skltree_p_back.DC6"
+	SkillsPanelSorcerer       = "/data/global/ui/SPELLS/skltree_s_back.DC6"
 
 	GenericSkills     = "/data/global/ui/SPELLS/Skillicon.DC6"
 	AmazonSkills      = "/data/global/ui/SPELLS/AmSkillicon.DC6"
@@ -194,6 +295,7 @@ const (
 	ItemRatio             = "/data/global/excel/itemratio.txt"
 	ItemTypes             = "/data/global/excel/ItemTypes.txt"
 	QualityItems          = "/data/global/excel/qualityitems.txt"
+	LowQualityItems       = "/data/global/excel/lowqualityitems.txt"
 	Overlays              = "/data/global/excel/Overlay.txt"
 	Runes                 = "/data/global/excel/runes.txt"
 	Sets                  = "/data/global/excel/Sets.txt"
@@ -203,14 +305,18 @@ const (
 	Events                = "/data/global/excel/events.txt"
 	Properties            = "/data/global/excel/Properties.txt"
 	Hireling              = "/data/global/excel/hireling.txt"
+	HirelingDescription   = "/data/global/excel/HireDesc.txt"
 	DifficultyLevels      = "/data/global/excel/difficultylevels.txt"
 	AutoMap               = "/data/global/excel/AutoMap.txt"
 	CubeRecipes           = "/data/global/excel/cubemain.txt"
+	CubeModifier          = "/data/global/excel/CubeMod.txt"
+	CubeType              = "/data/global/excel/CubeType.txt"
 	Skills                = "/data/global/excel/skills.txt"
 	SkillDesc             = "/data/global/excel/skilldesc.txt"
 	SkillCalc             = "/data/global/excel/skillcalc.txt"
 	MissileCalc           = "/data/global/excel/misscalc.txt"
-	TreasureClass         = "/data/global/excel/TreasureClassEx.txt"
+	TreasureClass         = "/data/global/excel/TreasureClass.txt"
+	TreasureClassEx       = "/data/global/excel/TreasureClassEx.txt"
 	States                = "/data/global/excel/states.txt"
 	SoundEnvirons         = "/data/global/excel/soundenviron.txt"
 	Shrines               = "/data/global/excel/shrines.txt"
@@ -226,6 +332,9 @@ const (
 	MonsterSound          = "/data/global/excel/monsounds.txt"
 	MonsterSequence       = "/data/global/excel/monseq.txt"
 	PlayerClass           = "/data/global/excel/PlayerClass.txt"
+	PlayerType            = "/data/global/excel/PlrType.txt"
+	Composite             = "/data/global/excel/Composit.txt"
+	HitClass              = "/data/global/excel/HitClass.txt"
 	ObjectGroup           = "/data/global/excel/objgroup.txt"
 	CompCode              = "/data/global/excel/compcode.txt"
 	Belts                 = "/data/global/excel/belts.txt"
@@ -246,6 +355,8 @@ const (
 	Inventory   = "/data/global/excel/inventory.txt"
 	Weapons     = "/data/global/excel/weapons.txt"
 	Armor       = "/data/global/excel/armor.txt"
+	ArmorType   = "/data/global/excel/ArmType.txt"
+	WeaponClass = "/data/global/excel/WeaponClass.txt"
 	Books       = "/data/global/excel/books.txt"
 	Misc        = "/data/global/excel/misc.txt"
 	UniqueItems = "/data/global/excel/UniqueItems.txt"

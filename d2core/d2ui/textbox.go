@@ -1,45 +1,55 @@
 package d2ui
 
 import (
-	"log"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 )
+
+// static check that TextBox implements clickable widget
+var _ ClickableWidget = &TextBox{}
 
 // TextBox represents a text input box
 type TextBox struct {
-	manager   *UIManager
-	textLabel *Label
-	lineBar   *Label
-	text      string
-	filter    string
-	x         int
-	y         int
-	bgSprite  *Sprite
-	visible   bool
-	enabled   bool
-	isFocused bool
+	*BaseWidget
+	textLabel    *Label
+	lineBar      *Label
+	text         string
+	filter       string
+	bgSprite     *Sprite
+	enabled      bool
+	isFocused    bool
+	isNumberOnly bool
+	maxValue     int
+
+	*d2util.Logger
 }
 
 // NewTextbox creates a new instance of a text box
 func (ui *UIManager) NewTextbox() *TextBox {
 	bgSprite, err := ui.NewSprite(d2resource.TextBox2, d2resource.PaletteUnits)
 	if err != nil {
-		log.Print(err)
+		ui.Error(err.Error())
 		return nil
 	}
 
+	base := NewBaseWidget(ui)
+
 	tb := &TextBox{
-		filter:    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-		bgSprite:  bgSprite,
-		textLabel: ui.NewLabel(d2resource.FontFormal11, d2resource.PaletteUnits),
-		lineBar:   ui.NewLabel(d2resource.FontFormal11, d2resource.PaletteUnits),
-		enabled:   true,
-		visible:   true,
+		BaseWidget:   base,
+		filter:       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		bgSprite:     bgSprite,
+		textLabel:    ui.NewLabel(d2resource.FontFormal11, d2resource.PaletteUnits),
+		lineBar:      ui.NewLabel(d2resource.FontFormal11, d2resource.PaletteUnits),
+		enabled:      true,
+		Logger:       ui.Logger,
+		isNumberOnly: false, // (disabled)
+		maxValue:     -1,    // (disabled)
 	}
 	tb.lineBar.SetText("_")
 
@@ -54,27 +64,17 @@ func (v *TextBox) SetFilter(filter string) {
 }
 
 // Render renders the text box
-func (v *TextBox) Render(target d2interface.Surface) error {
+func (v *TextBox) Render(target d2interface.Surface) {
 	if !v.visible {
-		return nil
+		return
 	}
 
-	if err := v.bgSprite.Render(target); err != nil {
-		return err
-	}
-
+	v.bgSprite.Render(target)
 	v.textLabel.Render(target)
 
 	if (time.Now().UnixNano()/1e6)&(1<<8) > 0 {
 		v.lineBar.Render(target)
 	}
-
-	return nil
-}
-
-// bindManager binds the textbox to the UI manager
-func (v *TextBox) bindManager(manager *UIManager) {
-	v.manager = manager
 }
 
 // OnKeyChars handles key character events
@@ -84,16 +84,32 @@ func (v *TextBox) OnKeyChars(event d2interface.KeyCharsEvent) bool {
 	}
 
 	newText := string(event.Chars())
+	if !(len(newText) > 0) {
+		return false
+	}
 
-	if len(newText) > 0 {
+	if !v.isNumberOnly {
 		v.text += newText
-
 		v.SetText(v.text)
 
 		return true
 	}
 
-	return false
+	number, err := strconv.Atoi(v.text + newText)
+	if err != nil {
+		v.Debugf("Unable to convert string %s to intager: %s", v.text+newText, err)
+		return false
+	}
+
+	if number <= v.maxValue {
+		v.text += newText
+	} else {
+		v.text = strconv.Itoa(v.maxValue)
+	}
+
+	v.SetText(v.text)
+
+	return true
 }
 
 // OnKeyRepeat handles key repeat events
@@ -192,21 +208,6 @@ func (v *TextBox) SetPosition(x, y int) {
 	v.bgSprite.SetPosition(v.x, v.y+26)
 }
 
-// GetPosition returns the position of the text box
-func (v *TextBox) GetPosition() (x, y int) {
-	return v.x, v.y
-}
-
-// GetVisible returns the visibility of the text box
-func (v *TextBox) GetVisible() bool {
-	return v.visible
-}
-
-// SetVisible sets the visibility of the text box
-func (v *TextBox) SetVisible(visible bool) {
-	v.visible = visible
-}
-
 // GetEnabled returns the enabled state of the text box
 func (v *TextBox) GetEnabled() bool {
 	return v.enabled
@@ -235,4 +236,10 @@ func (v *TextBox) OnActivated(_ func()) {
 // Activate activates the text box
 func (v *TextBox) Activate() {
 	v.isFocused = true
+}
+
+// SetNumberOnly sets text box to support only numeric values
+func (v *TextBox) SetNumberOnly(max int) {
+	v.isNumberOnly = true
+	v.maxValue = max
 }

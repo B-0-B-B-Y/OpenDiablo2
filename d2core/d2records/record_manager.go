@@ -2,7 +2,8 @@ package d2records
 
 import (
 	"fmt"
-	"log"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2data"
 
@@ -11,11 +12,19 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 )
 
+const (
+	logPrefix = "Record Manager"
+)
+
 // NewRecordManager creates a new record manager (no loaders are bound!)
-func NewRecordManager() (*RecordManager, error) {
+func NewRecordManager(l d2util.LogLevel) (*RecordManager, error) {
 	rm := &RecordManager{
 		boundLoaders: make(map[string][]recordLoader),
 	}
+
+	rm.Logger = d2util.NewLogger()
+	rm.Logger.SetPrefix(logPrefix)
+	rm.Logger.SetLevel(l)
 
 	err := rm.init()
 	if err != nil {
@@ -27,8 +36,18 @@ func NewRecordManager() (*RecordManager, error) {
 
 // RecordManager stores all of the records loaded from txt files
 type RecordManager struct {
+	*d2util.Logger
 	boundLoaders map[string][]recordLoader // there can be more than one loader bound for a file
-	Animations   d2data.AnimationData
+	Animation    struct {
+		Data  d2data.AnimationData
+		Token struct {
+			Player    PlayerTypes
+			Composite CompositeTypes
+			Armor     ArmorTypes
+			Weapon    WeaponClasses
+			HitClass  HitClasses
+		}
+	}
 	BodyLocations
 	Calculation struct {
 		Skills   Calculations
@@ -47,7 +66,10 @@ type RecordManager struct {
 	DifficultyLevels
 	ElemTypes
 	Gamble
-	Hirelings
+	Hireling struct {
+		Details      Hirelings
+		Descriptions HirelingDescriptions
+	}
 	Item struct {
 		All CommonItems // NOTE: populated when armor, weapons, and misc items are ALL loaded
 
@@ -66,20 +88,28 @@ type RecordManager struct {
 			Prefix MagicPrefix
 			Suffix MagicSuffix
 		}
-		MagicPrefixGroups ItemAffixGroups
-		MagicSuffixGroups ItemAffixGroups
-		Quality           ItemQualities
-		Rare              struct {
+		MagicPrefixGroups  ItemAffixGroups
+		MagicSuffixGroups  ItemAffixGroups
+		Quality            ItemQualities
+		LowQualityPrefixes LowQualities
+		Rare               struct {
 			Prefix RarePrefixes
 			Suffix RareSuffixes
 		}
-		Ratios  ItemRatios
-		Recipes CubeRecipes
+		Ratios ItemRatios
+		Cube   struct {
+			Recipes   CubeRecipes
+			Modifiers CubeModifiers
+			Types     CubeTypes
+		}
 		Runewords
 		Sets
 		SetItems
-		Stats ItemStatCosts
-		TreasureClass
+		Stats    ItemStatCosts
+		Treasure struct {
+			Normal    TreasureClass
+			Expansion TreasureClass
+		}
 		Types  ItemTypes
 		Unique UniqueItems
 		StorePages
@@ -100,10 +130,14 @@ type RecordManager struct {
 	Missiles
 	missilesByName
 	Monster struct {
-		AI         MonsterAI
-		Equipment  MonsterEquipment
-		Levels     MonsterLevels
-		Modes      MonModes
+		AI        MonsterAI
+		Equipment MonsterEquipment
+		Levels    MonsterLevels
+		Modes     MonModes
+		Name      struct {
+			Prefix UniqueMonsterAffixes
+			Suffix UniqueMonsterAffixes
+		}
 		Placements MonsterPlacements
 		Presets    MonPresets
 		Props      MonsterProperties
@@ -140,7 +174,7 @@ type RecordManager struct {
 	States
 }
 
-func (r *RecordManager) init() error {
+func (r *RecordManager) init() error { // nolint:funlen // can't reduce
 	loaders := []struct {
 		path   string
 		loader recordLoader
@@ -198,6 +232,7 @@ func (r *RecordManager) init() error {
 		{d2resource.SetItems, setItemLoader},
 		{d2resource.AutoMagic, autoMagicLoader},
 		{d2resource.TreasureClass, treasureClassLoader},
+		{d2resource.TreasureClassEx, treasureClassExLoader},
 		{d2resource.States, statesLoader},
 		{d2resource.SoundEnvirons, soundEnvironmentLoader},
 		{d2resource.Shrines, shrineLoader},
@@ -219,6 +254,17 @@ func (r *RecordManager) init() error {
 		{d2resource.RarePrefix, rareItemPrefixLoader},
 		{d2resource.RareSuffix, rareItemSuffixLoader},
 		{d2resource.Events, eventsLoader},
+		{d2resource.ArmorType, armorTypesLoader},      // anim mode tokens
+		{d2resource.WeaponClass, weaponClassesLoader}, // anim mode tokens
+		{d2resource.PlayerType, playerTypeLoader},     // anim mode tokens
+		{d2resource.Composite, compositeTypeLoader},   // anim mode tokens
+		{d2resource.HitClass, hitClassLoader},         // anim mode tokens
+		{d2resource.UniquePrefix, uniqueMonsterPrefixLoader},
+		{d2resource.UniqueSuffix, uniqueMonsterSuffixLoader},
+		{d2resource.CubeModifier, cubeModifierLoader},
+		{d2resource.CubeType, cubeTypeLoader},
+		{d2resource.HirelingDescription, hirelingDescriptionLoader},
+		{d2resource.LowQualityItems, lowQualityLoader},
 	}
 
 	for idx := range loaders {
@@ -288,8 +334,8 @@ func (r *RecordManager) GetExperienceBreakpoint(heroType d2enum.Hero, level int)
 	return r.Character.Experience[level].HeroBreakpoints[heroType]
 }
 
-// GetLevelDetails gets a LevelDetailsRecord by the record Id
-func (r *RecordManager) GetLevelDetails(id int) *LevelDetailsRecord {
+// GetLevelDetails gets a LevelDetailRecord by the record Id
+func (r *RecordManager) GetLevelDetails(id int) *LevelDetailRecord {
 	for i := 0; i < len(r.Level.Details); i++ {
 		if r.Level.Details[i].ID == id {
 			return r.Level.Details[i]
@@ -364,7 +410,7 @@ func (r *RecordManager) initObjectRecords(lookups []ObjectLookupRecord) {
 func (r *RecordManager) LookupObject(act, typ, id int) *ObjectLookupRecord {
 	object := r.lookupObject(act, typ, id)
 	if object == nil {
-		log.Panicf("Failed to look up object Act: %d, Type: %d, ID: %d", act, typ, id)
+		r.Fatalf("Failed to look up object Act: %d, Type: %d, ID: %d", act, typ, id)
 	}
 
 	return object
@@ -387,7 +433,7 @@ func (r *RecordManager) lookupObject(act, typ, id int) *ObjectLookupRecord {
 }
 
 // SelectSoundByIndex selects a sound by its ID
-func (r *RecordManager) SelectSoundByIndex(index int) *SoundDetailsRecord {
+func (r *RecordManager) SelectSoundByIndex(index int) *SoundDetailRecord {
 	for idx := range r.Sound.Details {
 		if r.Sound.Details[idx].Index == index {
 			return r.Sound.Details[idx]

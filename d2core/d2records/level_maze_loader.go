@@ -1,8 +1,6 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
@@ -10,7 +8,7 @@ func levelMazeDetailsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(LevelMazeDetails)
 
 	for d.Next() {
-		record := &LevelMazeDetailsRecord{
+		record := &LevelMazeDetailRecord{
 			Name:              d.String("Name"),
 			LevelID:           d.Number("Level"),
 			NumRoomsNormal:    d.Number("Rooms"),
@@ -26,7 +24,7 @@ func levelMazeDetailsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d LevelMazeDetails records", len(records))
+	r.Debugf("Loaded %d LevelMazeDetail records", len(records))
 
 	r.Level.Maze = records
 

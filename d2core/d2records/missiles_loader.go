@@ -1,7 +1,6 @@
 package d2records
 
 import (
-	"log"
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
@@ -9,6 +8,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2calculation"
 )
 
+// nolint:funlen // cant reduce
 func missilesLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(Missiles)
 	r.missilesByName = make(missilesByName)
@@ -304,7 +304,7 @@ func missilesLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d Missile Records", len(records))
+	r.Debugf("Loaded %d Missile records", len(records))
 
 	r.Missiles = records
 

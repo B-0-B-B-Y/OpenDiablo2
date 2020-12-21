@@ -1,11 +1,10 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
+// nolint:funlen // cant reduce
 func beltsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(Belts)
 
@@ -103,7 +102,7 @@ func beltsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d belts", len(records))
+	r.Debugf("Loaded %d Belt records", len(records))
 
 	r.Item.Belts = records
 

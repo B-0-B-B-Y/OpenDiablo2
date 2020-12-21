@@ -277,7 +277,7 @@ var itemStatCosts = map[string]*d2records.ItemStatCostRecord{
 }
 
 // nolint:gochecknoglobals // just a test
-var charStats = map[d2enum.Hero]*d2records.CharStatsRecord{
+var charStats = map[d2enum.Hero]*d2records.CharStatRecord{
 	d2enum.HeroPaladin: {
 		Class:             d2enum.HeroPaladin,
 		SkillStrAll:       "to Paladin Skill Levels",
@@ -297,7 +297,7 @@ var skillDetails = map[int]*d2records.SkillRecord{
 }
 
 // nolint:gochecknoglobals // just a test
-var monStats = map[string]*d2records.MonStatsRecord{
+var monStats = map[string]*d2records.MonStatRecord{
 	"Specter": {NameString: "Specter", ID: 40},
 }
 
@@ -419,9 +419,17 @@ var testAssetManager *d2asset.AssetManager
 var testItemFactory *ItemFactory
 
 func TestSetup(t *testing.T) {
+	var err error
+
 	testAssetManager = &d2asset.AssetManager{}
 	testAssetManager.Records = &d2records.RecordManager{}
-	testItemFactory, _ = NewItemFactory(testAssetManager)
+
+	testItemFactory, err = NewItemFactory(testAssetManager)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
 	testAssetManager.Records.Item.Stats = itemStatCosts
 	testAssetManager.Records.Character.Stats = charStats
 	testAssetManager.Records.Skill.Details = skillDetails

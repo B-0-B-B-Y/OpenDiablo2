@@ -2,12 +2,16 @@ package d2gui
 
 import (
 	"image/color"
-	"log"
 	"math"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+)
+
+const (
+	logPrefix = "GUI Manager"
 )
 
 // GuiManager is a GUI widget manager that handles dynamic layout/positioning of widgets
@@ -20,10 +24,12 @@ type GuiManager struct {
 	loadingAnim   d2interface.Animation
 	cursorVisible bool
 	loading       bool
+
+	*d2util.Logger
 }
 
 // CreateGuiManager creates an instance of the GuiManager
-func CreateGuiManager(asset *d2asset.AssetManager, inputManager d2interface.InputManager) (*GuiManager, error) {
+func CreateGuiManager(asset *d2asset.AssetManager, l d2util.LogLevel, inputManager d2interface.InputManager) (*GuiManager, error) {
 	cursorAnim, err := asset.LoadAnimation(d2resource.CursorDefault, d2resource.PaletteUnits)
 	if err != nil {
 		return nil, err
@@ -40,6 +46,10 @@ func CreateGuiManager(asset *d2asset.AssetManager, inputManager d2interface.Inpu
 		loadingAnim:   loadingAnim,
 		cursorVisible: true,
 	}
+
+	manager.Logger = d2util.NewLogger()
+	manager.Logger.SetPrefix(logPrefix)
+	manager.Logger.SetLevel(l)
 
 	manager.clear()
 
@@ -91,29 +101,21 @@ func (m *GuiManager) OnMouseMove(event d2interface.MouseMoveEvent) bool {
 // Render renders the GuiManager to the given surface
 func (m *GuiManager) Render(target d2interface.Surface) error {
 	if m.loading {
-		if err := m.renderLoadScreen(target); err != nil {
-			return err
-		}
+		m.renderLoadScreen(target)
 	} else if m.layout != nil {
 		m.layout.SetSize(target.GetSize())
-		if err := m.layout.render(target); err != nil {
-			return err
-		}
+		m.layout.render(target)
 	}
 
 	if m.cursorVisible {
-		if err := m.renderCursor(target); err != nil {
-			return err
-		}
+		m.renderCursor(target)
 	}
 
 	return nil
 }
 
-func (m *GuiManager) renderLoadScreen(target d2interface.Surface) error {
-	if clearErr := target.Clear(color.Black); clearErr != nil {
-		return clearErr
-	}
+func (m *GuiManager) renderLoadScreen(target d2interface.Surface) {
+	target.Clear(color.Black)
 
 	pushCount := 0
 
@@ -128,10 +130,10 @@ func (m *GuiManager) renderLoadScreen(target d2interface.Surface) error {
 
 	defer target.PopN(pushCount)
 
-	return m.loadingAnim.Render(target)
+	m.loadingAnim.Render(target)
 }
 
-func (m *GuiManager) renderCursor(target d2interface.Surface) error {
+func (m *GuiManager) renderCursor(target d2interface.Surface) {
 	_, height := m.cursorAnim.GetCurrentFrameSize()
 	pushCount := 0
 
@@ -143,7 +145,7 @@ func (m *GuiManager) renderCursor(target d2interface.Surface) error {
 
 	defer target.PopN(pushCount)
 
-	return m.cursorAnim.Render(target)
+	m.cursorAnim.Render(target)
 }
 
 // Advance advances the GuiManager state
@@ -167,7 +169,7 @@ func (m *GuiManager) ShowLoadScreen(progress float64) {
 
 	err := animation.SetCurrentFrame(int(float64(frameCount-1) * progress))
 	if err != nil {
-		log.Print(err)
+		m.Error(err.Error())
 	}
 
 	m.loading = true

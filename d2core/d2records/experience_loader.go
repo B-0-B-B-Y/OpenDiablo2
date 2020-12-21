@@ -1,8 +1,6 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
@@ -50,7 +48,7 @@ func experienceLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	}
 
 	for d.Next() {
-		record := &ExperienceBreakpointsRecord{
+		record := &ExperienceBreakpointRecord{
 			Level: d.Number("Level"),
 			HeroBreakpoints: map[d2enum.Hero]int{
 				d2enum.HeroAmazon:      d.Number("Amazon"),
@@ -70,7 +68,7 @@ func experienceLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d Experience Breakpoint records", len(breakpoints))
+	r.Debugf("Loaded %d ExperienceBreakpoint records", len(breakpoints))
 
 	r.Character.MaxLevel = maxLevels
 	r.Character.Experience = breakpoints

@@ -2,9 +2,7 @@ package d2maprenderer
 
 import (
 	"errors"
-	"fmt"
 	"image/color"
-	"log"
 	"math"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -15,6 +13,10 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
+)
+
+const (
+	logPrefix = "Map Renderer"
 )
 
 const (
@@ -59,18 +61,24 @@ type MapRenderer struct {
 	entityDebugVisLevel int     // Entity Debug visibility index (0=none, 1=vectors)
 	lastFrameTime       float64 // The last time the map was rendered
 	currentFrame        int     // Current render frame (for animations)
+
+	*d2util.Logger
 }
 
 // CreateMapRenderer creates a new MapRenderer, sets the required fields and returns a pointer to it.
 func CreateMapRenderer(asset *d2asset.AssetManager, renderer d2interface.Renderer,
 	mapEngine *d2mapengine.MapEngine,
-	term d2interface.Terminal, startX, startY float64) *MapRenderer {
+	term d2interface.Terminal, l d2util.LogLevel, startX, startY float64) *MapRenderer {
 	result := &MapRenderer{
 		asset:     asset,
 		renderer:  renderer,
 		mapEngine: mapEngine,
 		viewport:  NewViewport(0, 0, 800, 600),
 	}
+
+	result.Logger = d2util.NewLogger()
+	result.Logger.SetPrefix(logPrefix)
+	result.Logger.SetLevel(l)
 
 	result.Camera = Camera{}
 	rx, ry := result.WorldToOrtho(startX, startY)
@@ -84,7 +92,7 @@ func CreateMapRenderer(asset *d2asset.AssetManager, renderer d2interface.Rendere
 	})
 
 	if err != nil {
-		fmt.Printf("could not bind the mapdebugvis action, err: %v\n", err)
+		result.Errorf("could not bind the mapdebugvis action, err: %v", err)
 	}
 
 	err = term.BindAction("entitydebugvis", "set entity debug visualization level", func(level int) {
@@ -92,7 +100,7 @@ func CreateMapRenderer(asset *d2asset.AssetManager, renderer d2interface.Rendere
 	})
 
 	if err != nil {
-		fmt.Printf("could not bind the entitydebugvis action, err: %v\n", err)
+		result.Errorf("could not bind the entitydebugvis action, err: %v", err)
 	}
 
 	if mapEngine.LevelType().ID != 0 {
@@ -206,25 +214,7 @@ func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, e
 		for tileX := startX; tileX < endX; tileX++ {
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
 
-			tileEnt := make([]d2interface.MapEntity, 0)
-
-			// need to add render culling
-			// https://github.com/OpenDiablo2/OpenDiablo2/issues/821
-			for _, mapEntity := range mr.mapEngine.Entities() {
-				pos := mapEntity.GetPosition()
-				vec := pos.World()
-				entityX, entityY := vec.X(), vec.Y()
-
-				if mapEntity.GetLayer() != 1 {
-					continue
-				}
-
-				if (int(entityX) != tileX) || (int(entityY) != tileY) {
-					continue
-				}
-
-				tileEnt = append(tileEnt, mapEntity)
-			}
+			tileEnt := mr.getEntitiesBelowWalls(tileX, tileY)
 
 			for subY := 0; subY < 5; subY++ {
 				for subX := 0; subX < 5; subX++ {
@@ -246,6 +236,30 @@ func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, e
 	}
 }
 
+func (mr *MapRenderer) getEntitiesBelowWalls(tileX, tileY int) []d2interface.MapEntity {
+	entities := make([]d2interface.MapEntity, 0)
+
+	// need to add render culling
+	// https://github.com/OpenDiablo2/OpenDiablo2/issues/821
+	for _, mapEntity := range mr.mapEngine.Entities() {
+		pos := mapEntity.GetPosition()
+		vec := pos.World()
+		entityX, entityY := vec.X(), vec.Y()
+
+		if mapEntity.GetLayer() != 1 {
+			continue
+		}
+
+		if (int(entityX) != tileX) || (int(entityY) != tileY) {
+			continue
+		}
+
+		entities = append(entities, mapEntity)
+	}
+
+	return entities
+}
+
 // Upper wall tiles and entities above walls.
 func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, endX, endY int) {
 	for tileY := startY; tileY < endY; tileY++ {
@@ -254,36 +268,18 @@ func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, e
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
 			mr.renderTilePass2(tile, target)
 
-			tileEnt := make([]d2interface.MapEntity, 0)
-
-			// need to add render culling
-			// https://github.com/OpenDiablo2/OpenDiablo2/issues/821
-			for _, mapEntity := range mr.mapEngine.Entities() {
-				pos := mapEntity.GetPosition()
-				vec := pos.World()
-				entityX, entityY := vec.X(), vec.Y()
-
-				if mapEntity.GetLayer() == 1 {
-					continue
-				}
-
-				if (int(entityX) != tileX) || (int(entityY) != tileY) {
-					continue
-				}
-
-				tileEnt = append(tileEnt, mapEntity)
-			}
+			entities := mr.getEntitiesAboveWalls(tileX, tileY)
 
 			for subY := 0; subY < 5; subY++ {
 				for subX := 0; subX < 5; subX++ {
-					for _, mapEntity := range tileEnt {
-						pos := mapEntity.GetPosition()
+					for _, entity := range entities {
+						pos := entity.GetPosition()
 						if (int(pos.SubTileOffset().X()) != subX) || (int(pos.SubTileOffset().Y()) != subY) {
 							continue
 						}
 
 						target.PushTranslation(mr.viewport.GetTranslationScreen())
-						mapEntity.Render(target)
+						entity.Render(target)
 						target.Pop()
 					}
 				}
@@ -292,6 +288,30 @@ func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, e
 			mr.viewport.PopTranslation()
 		}
 	}
+}
+
+func (mr *MapRenderer) getEntitiesAboveWalls(tileX, tileY int) []d2interface.MapEntity {
+	entities := make([]d2interface.MapEntity, 0)
+
+	// need to add render culling
+	// https://github.com/OpenDiablo2/OpenDiablo2/issues/821
+	for _, mapEntity := range mr.mapEngine.Entities() {
+		pos := mapEntity.GetPosition()
+		vec := pos.World()
+		entityX, entityY := vec.X(), vec.Y()
+
+		if mapEntity.GetLayer() == 1 {
+			continue
+		}
+
+		if (int(entityX) != tileX) || (int(entityY) != tileY) {
+			continue
+		}
+
+		entities = append(entities, mapEntity)
+	}
+
+	return entities
 }
 
 // Roof tiles.
@@ -351,7 +371,7 @@ func (mr *MapRenderer) renderFloor(tile d2ds1.FloorShadowRecord, target d2interf
 	}
 
 	if img == nil {
-		log.Printf("Render called on uncached floor {%v,%v}", tile.Style, tile.Sequence)
+		mr.Warningf("Render called on uncached floor {%v,%v}", tile.Style, tile.Sequence)
 		return
 	}
 
@@ -361,15 +381,13 @@ func (mr *MapRenderer) renderFloor(tile d2ds1.FloorShadowRecord, target d2interf
 	target.PushTranslation(mr.viewport.GetTranslationScreen())
 	defer target.Pop()
 
-	if err := target.Render(img); err != nil {
-		fmt.Printf("failed to render the floor, err: %v\n", err)
-	}
+	target.Render(img)
 }
 
 func (mr *MapRenderer) renderWall(tile d2ds1.WallRecord, viewport *Viewport, target d2interface.Surface) {
 	img := mr.getImageCacheRecord(tile.Style, tile.Sequence, tile.Type, tile.RandomIndex)
 	if img == nil {
-		log.Printf("Render called on uncached wall {%v,%v,%v}", tile.Style, tile.Sequence, tile.Type)
+		mr.Warningf("Render called on uncached wall {%v,%v,%v}", tile.Style, tile.Sequence, tile.Type)
 		return
 	}
 
@@ -379,15 +397,13 @@ func (mr *MapRenderer) renderWall(tile d2ds1.WallRecord, viewport *Viewport, tar
 	target.PushTranslation(viewport.GetTranslationScreen())
 	defer target.Pop()
 
-	if err := target.Render(img); err != nil {
-		fmt.Printf("failed to render the wall, err: %v\n", err)
-	}
+	target.Render(img)
 }
 
 func (mr *MapRenderer) renderShadow(tile d2ds1.FloorShadowRecord, target d2interface.Surface) {
 	img := mr.getImageCacheRecord(tile.Style, tile.Sequence, 13, tile.RandomIndex)
 	if img == nil {
-		log.Printf("Render called on uncached shadow {%v,%v}", tile.Style, tile.Sequence)
+		mr.Warningf("Render called on uncached shadow {%v,%v}", tile.Style, tile.Sequence)
 		return
 	}
 
@@ -399,9 +415,7 @@ func (mr *MapRenderer) renderShadow(tile d2ds1.FloorShadowRecord, target d2inter
 	target.PushColor(color.RGBA{R: 255, G: 255, B: 255, A: 160}) //nolint:gomnd // Not a magic number...
 	defer target.Pop()
 
-	if err := target.Render(img); err != nil {
-		fmt.Printf("failed to render the shadow, err: %v\n", err)
-	}
+	target.Render(img)
 }
 
 func (mr *MapRenderer) renderMapDebug(mapDebugVisLevel int, target d2interface.Surface, startX, startY, endX, endY int) {

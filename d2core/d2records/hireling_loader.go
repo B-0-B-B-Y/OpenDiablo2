@@ -1,8 +1,6 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
@@ -92,9 +90,9 @@ func hirelingLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d Hireling records", len(records))
+	r.Debugf("Loaded %d Hireling records", len(records))
 
-	r.Hirelings = records
+	r.Hireling.Details = records
 
 	return nil
 }

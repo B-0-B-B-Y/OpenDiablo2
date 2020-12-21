@@ -1,11 +1,10 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
+// nolint:funlen // cant reduce
 func uniqueItemsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(UniqueItems)
 
@@ -129,7 +128,7 @@ func uniqueItemsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 
 	r.Item.Unique = records
 
-	log.Printf("Loaded %d unique items", len(records))
+	r.Debugf("Loaded %d UniqueItem records", len(records))
 
 	return nil
 }

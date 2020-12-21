@@ -27,7 +27,7 @@ func newDCCAnimation(
 		palette: pal,
 	}
 
-	anim := Animation{
+	anim := &Animation{
 		playLength: defaultPlayLength,
 		playLoop:   true,
 		effect:     effect,
@@ -41,7 +41,7 @@ func newDCCAnimation(
 		},
 	}
 
-	DCC.Animation = anim
+	DCC.Animation = *anim
 
 	err := DCC.init()
 	if err != nil {
@@ -72,8 +72,12 @@ func (a *DCCAnimation) init() error {
 
 // Clone creates a copy of the animation
 func (a *DCCAnimation) Clone() d2interface.Animation {
-	animation := *a
-	return &animation
+	clone := &DCCAnimation{}
+	clone.Animation = *a.Animation.Clone().(*Animation)
+	clone.dcc = a.dcc.Clone()
+	clone.palette = a.palette
+
+	return clone
 }
 
 // SetDirection places the animation in the direction of an animation
@@ -203,14 +207,9 @@ func (a *DCCAnimation) createFrameSurface(directionIndex, frameIndex int) (d2int
 		return nil, errors.New("no renderer")
 	}
 
-	sfc, err := a.renderer.NewSurface(animFrame.width, animFrame.height, d2enum.FilterNearest)
-	if err != nil {
-		return nil, err
-	}
+	sfc := a.renderer.NewSurface(animFrame.width, animFrame.height)
 
-	if err := sfc.ReplacePixels(colorData); err != nil {
-		return nil, err
-	}
+	sfc.ReplacePixels(colorData)
 
 	return sfc, nil
 }

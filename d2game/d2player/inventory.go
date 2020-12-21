@@ -3,14 +3,13 @@ package d2player
 import (
 	"fmt"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2item/diablo2item"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
 )
@@ -23,58 +22,71 @@ const (
 )
 
 const (
-	blackAlpha70 = 0x000000C8
+	invCloseButtonX, invCloseButtonY = 419, 449
+	invGoldButtonX, invGoldButtonY   = 485, 455
+	invGoldLabelX, invGoldLabelY     = 510, 455
 )
 
-const (
-	invCloseButtonX, invCloseButtonY = 419, 449
-)
+// NewInventory creates an inventory instance and returns a pointer to it
+func NewInventory(asset *d2asset.AssetManager,
+	ui *d2ui.UIManager,
+	l d2util.LogLevel,
+	gold int,
+	record *d2records.InventoryRecord) (*Inventory, error) {
+	itemTooltip := ui.NewTooltip(d2resource.FontFormal11, d2resource.PaletteStatic, d2ui.TooltipXCenter, d2ui.TooltipYBottom)
+
+	itemFactory, err := diablo2item.NewItemFactory(asset)
+	if err != nil {
+		return nil, fmt.Errorf("during creating new item factory: %s", err)
+	}
+
+	mgp := NewMoveGoldPanel(asset, ui, gold, l)
+
+	inventory := &Inventory{
+		asset:       asset,
+		uiManager:   ui,
+		item:        itemFactory,
+		grid:        NewItemGrid(asset, ui, l, record),
+		originX:     record.Panel.Left,
+		itemTooltip: itemTooltip,
+		// originY: record.Panel.Top,
+		originY:       0, // expansion data has these all offset by +60 ...
+		gold:          gold,
+		moveGoldPanel: mgp,
+	}
+
+	inventory.moveGoldPanel.SetOnCloseCb(func() { inventory.onCloseGoldPanel() })
+
+	inventory.Logger = d2util.NewLogger()
+	inventory.Logger.SetLevel(l)
+	inventory.Logger.SetPrefix(logPrefix)
+
+	return inventory, nil
+}
 
 // Inventory represents the inventory
 type Inventory struct {
-	asset       *d2asset.AssetManager
-	item        *diablo2item.ItemFactory
-	uiManager   *d2ui.UIManager
-	frame       *d2ui.UIFrame
-	panel       *d2ui.Sprite
-	grid        *ItemGrid
-	hoverLabel  *d2ui.Label
-	closeButton *d2ui.Button
-	hoverX      int
-	hoverY      int
-	originX     int
-	originY     int
-	lastMouseX  int
-	lastMouseY  int
-	hovering    bool
-	isOpen      bool
-	onCloseCb   func()
-}
+	asset         *d2asset.AssetManager
+	item          *diablo2item.ItemFactory
+	uiManager     *d2ui.UIManager
+	panel         *d2ui.Sprite
+	goldLabel     *d2ui.Label
+	grid          *ItemGrid
+	itemTooltip   *d2ui.Tooltip
+	panelGroup    *d2ui.WidgetGroup
+	hoverX        int
+	hoverY        int
+	originX       int
+	originY       int
+	lastMouseX    int
+	lastMouseY    int
+	hovering      bool
+	isOpen        bool
+	onCloseCb     func()
+	gold          int
+	moveGoldPanel *MoveGoldPanel
 
-// NewInventory creates an inventory instance and returns a pointer to it
-func NewInventory(asset *d2asset.AssetManager, ui *d2ui.UIManager,
-	record *d2records.InventoryRecord) *Inventory {
-	hoverLabel := ui.NewLabel(d2resource.FontFormal11, d2resource.PaletteStatic)
-	hoverLabel.Alignment = d2gui.HorizontalAlignCenter
-
-	// https://github.com/OpenDiablo2/OpenDiablo2/issues/797
-	itemFactory, _ := diablo2item.NewItemFactory(asset)
-
-	return &Inventory{
-		asset:      asset,
-		uiManager:  ui,
-		item:       itemFactory,
-		grid:       NewItemGrid(asset, ui, record),
-		originX:    record.Panel.Left,
-		hoverLabel: hoverLabel,
-		// originY: record.Panel.Top,
-		originY: 0, // expansion data has these all offset by +60 ...
-	}
-}
-
-// IsOpen returns true if the inventory is open
-func (g *Inventory) IsOpen() bool {
-	return g.isOpen
+	*d2util.Logger
 }
 
 // Toggle negates the open state of the inventory
@@ -86,34 +98,50 @@ func (g *Inventory) Toggle() {
 	}
 }
 
-// Open opens the inventory
-func (g *Inventory) Open() {
-	g.isOpen = true
-	g.closeButton.SetVisible(true)
-}
-
-// Close closes the inventory
-func (g *Inventory) Close() {
-	g.isOpen = false
-	g.closeButton.SetVisible(false)
-	g.onCloseCb()
-}
-
-// SetOnCloseCb the callback run on closing the inventory
-func (g *Inventory) SetOnCloseCb(cb func()) {
-	g.onCloseCb = cb
-}
-
 // Load the resources required by the inventory
 func (g *Inventory) Load() {
-	g.frame = d2ui.NewUIFrame(g.asset, g.uiManager, d2ui.FrameRight)
+	var err error
 
-	g.closeButton = g.uiManager.NewButton(d2ui.ButtonTypeSquareClose, "")
-	g.closeButton.SetVisible(false)
-	g.closeButton.SetPosition(invCloseButtonX, invCloseButtonY)
-	g.closeButton.OnActivated(func() { g.Close() })
+	g.panelGroup = g.uiManager.NewWidgetGroup(d2ui.RenderPriorityInventory)
 
-	g.panel, _ = g.uiManager.NewSprite(d2resource.InventoryCharacterPanel, d2resource.PaletteSky)
+	frame := d2ui.NewUIFrame(g.asset, g.uiManager, d2ui.FrameRight)
+	g.panelGroup.AddWidget(frame)
+
+	g.panel, err = g.uiManager.NewSprite(d2resource.InventoryCharacterPanel, d2resource.PaletteSky)
+	if err != nil {
+		g.Error(err.Error())
+	}
+
+	closeButton := g.uiManager.NewButton(d2ui.ButtonTypeSquareClose, "")
+	closeButton.SetVisible(false)
+	closeButton.SetPosition(invCloseButtonX, invCloseButtonY)
+	closeButton.OnActivated(func() { g.Close() })
+	g.panelGroup.AddWidget(closeButton)
+
+	goldButton := g.uiManager.NewButton(d2ui.ButtonTypeGoldCoin, "")
+	goldButton.SetVisible(false)
+	goldButton.SetPosition(invGoldButtonX, invGoldButtonY)
+	goldButton.OnActivated(func() { g.onGoldClicked() })
+
+	// nolint:gocritic // this variable will be used in future
+	// deposite := g.asset.TranslateString("strGoldDeposit")
+	drop := g.asset.TranslateString("strGoldDrop")
+	// nolint:gocritic // this variable will be used in future
+	// withdraw := g.asset.TranslateString("strGoldWithdraw")
+
+	tooltip := g.uiManager.NewTooltip(d2resource.Font16, d2resource.PaletteSky, d2ui.TooltipXCenter, d2ui.TooltipYBottom)
+	// here should be switch-case statement for each of move-gold button descr
+	tooltip.SetText(drop)
+	tooltip.SetPosition(invGoldButtonX, invGoldButtonY)
+	goldButton.SetTooltip(tooltip)
+
+	g.panelGroup.AddWidget(goldButton)
+
+	g.goldLabel = g.uiManager.NewLabel(d2resource.Font16, d2resource.PaletteStatic)
+	g.goldLabel.Alignment = d2ui.HorizontalAlignLeft
+	g.goldLabel.SetText(fmt.Sprintln(g.moveGoldPanel.gold))
+	g.goldLabel.SetPosition(invGoldLabelX, invGoldLabelY)
+	g.panelGroup.AddWidget(g.goldLabel)
 
 	// https://github.com/OpenDiablo2/OpenDiablo2/issues/795
 	testInventoryCodes := [][]string{
@@ -126,8 +154,8 @@ func (g *Inventory) Load() {
 	inventoryItems := make([]InventoryItem, 0)
 
 	for idx := range testInventoryCodes {
-		item, err := g.item.NewItem(testInventoryCodes[idx]...)
-		if err != nil {
+		item, itemErr := g.item.NewItem(testInventoryCodes[idx]...)
+		if itemErr != nil {
 			continue
 		}
 
@@ -150,91 +178,116 @@ func (g *Inventory) Load() {
 	}
 
 	for slot := range testEquippedItemCodes {
-		item, err := g.item.NewItem(testEquippedItemCodes[slot]...)
-		if err != nil {
+		item, itemErr := g.item.NewItem(testEquippedItemCodes[slot]...)
+		if itemErr != nil {
 			continue
 		}
 
 		g.grid.ChangeEquippedSlot(slot, item)
 	}
 
-	_, err := g.grid.Add(inventoryItems...)
+	_, err = g.grid.Add(inventoryItems...)
 	if err != nil {
-		fmt.Printf("could not add items to the inventory, err: %v\n", err)
+		g.Errorf("could not add items to the inventory, err: %v", err.Error())
 	}
+
+	g.moveGoldPanel.Load()
+
+	g.panelGroup.SetVisible(false)
+}
+
+// Open opens the inventory
+func (g *Inventory) Open() {
+	g.isOpen = true
+	g.panelGroup.SetVisible(true)
+}
+
+// Close closes the inventory
+func (g *Inventory) Close() {
+	g.isOpen = false
+	g.moveGoldPanel.Close()
+	g.panelGroup.SetVisible(false)
+	g.onCloseCb()
+}
+
+// SetOnCloseCb the callback run on closing the inventory
+func (g *Inventory) SetOnCloseCb(cb func()) {
+	g.onCloseCb = cb
+}
+
+func (g *Inventory) onGoldClicked() {
+	g.Info("Move gold action clicked")
+	g.toggleMoveGoldPanel()
+}
+
+func (g *Inventory) toggleMoveGoldPanel() {
+	g.moveGoldPanel.Toggle()
+}
+
+func (g *Inventory) onCloseGoldPanel() {
+
+}
+
+// IsOpen returns true if the inventory is open
+func (g *Inventory) IsOpen() bool {
+	return g.isOpen
+}
+
+// Advance advances the state of the Inventory
+func (g *Inventory) Advance(_ float64) {
+	if !g.IsOpen() {
+		return
+	}
+
+	g.goldLabel.SetText(fmt.Sprintln(g.moveGoldPanel.gold))
 }
 
 // Render draws the inventory onto the given surface
-func (g *Inventory) Render(target d2interface.Surface) error {
+func (g *Inventory) Render(target d2interface.Surface) {
 	if !g.isOpen {
-		return nil
+		return
 	}
 
-	if err := g.frame.Render(target); err != nil {
-		return err
+	g.renderFrame(target)
+
+	g.grid.Render(target)
+	g.renderItemHover(target)
+}
+
+func (g *Inventory) renderFrame(target d2interface.Surface) {
+	frames := []int{
+		frameInventoryTopLeft,
+		frameInventoryTopRight,
+		frameInventoryBottomRight,
+		frameInventoryBottomLeft,
 	}
 
 	x, y := g.originX+1, g.originY
 	y += 64
 
-	// Panel
-	// Top left
-	if err := g.panel.SetCurrentFrame(frameInventoryTopLeft); err != nil {
-		return err
+	for _, frame := range frames {
+		if err := g.panel.SetCurrentFrame(frame); err != nil {
+			g.Error(err.Error())
+			return
+		}
+
+		w, h := g.panel.GetCurrentFrameSize()
+
+		g.panel.SetPosition(x, y+h)
+		g.panel.Render(target)
+
+		switch frame {
+		case frameInventoryTopLeft:
+			x += w
+		case frameInventoryTopRight:
+			y += h
+		case frameInventoryBottomRight:
+			x = g.originX + 1
+		}
 	}
+}
 
-	w, h := g.panel.GetCurrentFrameSize()
-
-	g.panel.SetPosition(x, y+h)
-
-	if err := g.panel.Render(target); err != nil {
-		return err
-	}
-
-	x += w
-
-	// Top right
-	if err := g.panel.SetCurrentFrame(frameInventoryTopRight); err != nil {
-		return err
-	}
-
-	_, h = g.panel.GetCurrentFrameSize()
-
-	g.panel.SetPosition(x, y+h)
-
-	if err := g.panel.Render(target); err != nil {
-		return err
-	}
-
-	y += h
-
-	// Bottom right
-	if err := g.panel.SetCurrentFrame(frameInventoryBottomRight); err != nil {
-		return err
-	}
-
-	_, h = g.panel.GetCurrentFrameSize()
-	g.panel.SetPosition(x, y+h)
-
-	if err := g.panel.Render(target); err != nil {
-		return err
-	}
-
-	// Bottom left
-	if err := g.panel.SetCurrentFrame(frameInventoryBottomLeft); err != nil {
-		return err
-	}
-
-	w, h = g.panel.GetCurrentFrameSize()
-
-	g.panel.SetPosition(x-w, y+h)
-
-	if err := g.panel.Render(target); err != nil {
-		return err
-	}
-
-	g.grid.Render(target)
-
+func (g *Inventory) renderItemHover(target d2interface.Surface) {
 	hovering := false
 
 	for idx := range g.grid.items {
@@ -258,54 +311,15 @@ func (g *Inventory) Render(target d2interface.Surface) error {
 	}
 
 	g.hovering = hovering
-
-	return nil
 }
 
 func (g *Inventory) renderItemDescription(target d2interface.Surface, i InventoryItem) {
-	lines := i.GetItemDescription()
+	if !g.moveGoldPanel.IsOpen() {
+		lines := i.GetItemDescription()
+		g.itemTooltip.SetTextLines(lines)
+		_, y := g.grid.SlotToScreen(i.InventoryGridSlot())
 
-	maxW, maxH := 0, 0
-	_, iy := g.grid.SlotToScreen(i.InventoryGridSlot())
-
-	for idx := range lines {
-		w, h := g.hoverLabel.GetTextMetrics(lines[idx])
-
-		if maxW < w {
-			maxW = w
-		}
-
-		maxH += h
+		g.itemTooltip.SetPosition(g.hoverX, y)
+		g.itemTooltip.Render(target)
 	}
-
-	halfW, halfH := maxW>>1, maxH>>1
-	centerX, centerY := g.hoverX, iy-halfH
-
-	if (centerX + halfW) > screenWidth {
-		centerX = screenWidth - halfW
-	}
-
-	if (centerY + halfH) > screenHeight {
-		centerY = screenHeight - halfH
-	}
-
-	target.PushTranslation(centerX, centerY)
-	defer target.Pop()
-
-	target.PushTranslation(-halfW, -halfH)
-	defer target.Pop()
-
-	target.DrawRect(maxW, maxH, d2util.Color(blackAlpha70))
-
-	target.PushTranslation(halfW, 0)
-	defer target.Pop()
-
-	for idx := range lines {
-		g.hoverLabel.SetText(lines[idx])
-		_, h := g.hoverLabel.GetTextMetrics(lines[idx])
-		g.hoverLabel.Render(target)
-		target.PushTranslation(0, h)
-	}
-
-	target.PopN(len(lines))
 }

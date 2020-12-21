@@ -6,14 +6,14 @@ import (
 	"runtime"
 )
 
-func defaultConfig() *Configuration {
+// DefaultConfig creates and returns a default configuration
+func DefaultConfig() *Configuration {
 	const (
 		defaultSfxVolume = 1.0
 		defaultBgmVolume = 0.3
 	)
 
 	config := &Configuration{
-		Language:        "ENG",
 		FullScreen:      false,
 		TicksPerSecond:  -1,
 		RunInBackground: true,
@@ -35,6 +35,7 @@ func defaultConfig() *Configuration {
 			"d2video.mpq",
 			"d2speech.mpq",
 		},
+		path: DefaultConfigPath(),
 	}
 
 	switch runtime.GOOS {

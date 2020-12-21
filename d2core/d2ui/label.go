@@ -2,7 +2,6 @@ package d2ui
 
 import (
 	"image/color"
-	"log"
 	"regexp"
 	"strings"
 
@@ -10,43 +9,53 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
 )
+
+// static check if Label implemented Widget
+var _ Widget = &Label{}
 
 // Label represents a user interface label
 type Label struct {
-	manager         *UIManager
+	*BaseWidget
 	text            string
-	X               int
-	Y               int
-	Alignment       d2gui.HorizontalAlign
+	Alignment       HorizontalAlign
 	font            *d2asset.Font
 	Color           map[int]color.Color
 	backgroundColor color.Color
+
+	*d2util.Logger
 }
 
 // NewLabel creates a new instance of a UI label
 func (ui *UIManager) NewLabel(fontPath, palettePath string) *Label {
 	font, err := ui.asset.LoadFont(fontPath+".tbl", fontPath+".dc6", palettePath)
 	if err != nil {
-		log.Print(err)
+		ui.Error(err.Error())
 		return nil
 	}
 
+	base := NewBaseWidget(ui)
+
 	result := &Label{
-		Alignment: d2gui.HorizontalAlignLeft,
-		Color:     map[int]color.Color{0: color.White},
-		font:      font,
+		BaseWidget: base,
+		Alignment:  HorizontalAlignLeft,
+		Color:      map[int]color.Color{0: color.White},
+		font:       font,
+		Logger:     ui.Logger,
 	}
 
 	result.bindManager(ui)
+
+	result.SetVisible(false)
+
+	ui.addWidget(result)
 
 	return result
 }
 
 // Render draws the label on the screen, respliting the lines to allow for other alignments.
 func (v *Label) Render(target d2interface.Surface) {
-	target.PushTranslation(v.X, v.Y)
+	target.PushTranslation(v.GetPosition())
 
 	lines := strings.Split(v.text, "\n")
 	yOffset := 0
@@ -75,7 +84,7 @@ func (v *Label) Render(target d2interface.Surface) {
 
 			err := v.font.RenderText(character, target)
 			if err != nil {
-				log.Print(err)
+				v.Error(err.Error())
 			}
 
 			target.PushTranslation(charWidth, 0)
@@ -91,22 +100,6 @@ func (v *Label) Render(target d2interface.Surface) {
 	target.Pop()
 }
 
-// bindManager binds the label to the UI manager
-func (v *Label) bindManager(manager *UIManager) {
-	v.manager = manager
-}
-
-// SetPosition moves the label to the specified location
-func (v *Label) SetPosition(x, y int) {
-	v.X = x
-	v.Y = y
-}
-
-// GetSize returns the size of the label
-func (v *Label) GetSize() (width, height int) {
-	return v.font.GetTextMetrics(v.text)
-}
-
 // GetTextMetrics returns the width and height of the enclosing rectangle in Pixels.
 func (v *Label) GetTextMetrics(text string) (width, height int) {
 	return v.font.GetTextMetrics(text)
@@ -115,6 +108,12 @@ func (v *Label) GetTextMetrics(text string) (width, height int) {
 // SetText sets the label's text
 func (v *Label) SetText(newText string) {
 	v.text = v.processColorTokens(newText)
+	v.BaseWidget.width, v.BaseWidget.height = v.font.GetTextMetrics(v.text)
+}
+
+// GetText returns label text
+func (v *Label) GetText() string {
+	return v.text
 }
 
 // SetBackgroundColor sets the background highlight color
@@ -144,7 +143,11 @@ func (v *Label) processColorTokens(str string) string {
 		matchToken := tokenMatch.Find(match)
 		matchStr := string(tokenMatch.ReplaceAll(match, empty))
 		token := ColorToken(matchToken)
+
 		theColor := getColor(token)
+		if theColor == nil {
+			continue
+		}
 
 		if v.Color == nil {
 			v.Color = make(map[int]color.Color)
@@ -160,16 +163,21 @@ func (v *Label) processColorTokens(str string) string {
 
 func (v *Label) getAlignOffset(textWidth int) int {
 	switch v.Alignment {
-	case d2gui.HorizontalAlignLeft:
+	case HorizontalAlignLeft:
 		return 0
-	case d2gui.HorizontalAlignCenter:
+	case HorizontalAlignCenter:
 		return -textWidth / 2
-	case d2gui.HorizontalAlignRight:
+	case HorizontalAlignRight:
 		return -textWidth
 	default:
-		log.Fatal("Invalid Alignment")
+		v.Fatal("Invalid Alignment")
 		return 0
 	}
+}
+
+// Advance is a no-op
+func (v *Label) Advance(elapsed float64) error {
+	return nil
 }
 
 func getColor(token ColorToken) color.Color {
@@ -189,7 +197,7 @@ func getColor(token ColorToken) color.Color {
 	chosen := colors[token]
 
 	if chosen == nil {
-		return colors[ColorTokenWhite]
+		return nil
 	}
 
 	return chosen

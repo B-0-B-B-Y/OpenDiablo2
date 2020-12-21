@@ -2,12 +2,11 @@ package d2gamescreen
 
 import (
 	"bufio"
-	"fmt"
-	"log"
 	"os"
 	"path"
 	"strings"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
@@ -29,6 +28,30 @@ type labelItem struct {
 	Available bool
 }
 
+// CreateCredits creates an instance of the credits screen
+func CreateCredits(navigator d2interface.Navigator,
+	asset *d2asset.AssetManager,
+	renderer d2interface.Renderer,
+	l d2util.LogLevel,
+	ui *d2ui.UIManager) *Credits {
+	credits := &Credits{
+		asset:              asset,
+		labels:             make([]*labelItem, 0),
+		cycleTime:          0,
+		doneWithCredits:    false,
+		cyclesTillNextLine: 0,
+		renderer:           renderer,
+		navigator:          navigator,
+		uiManager:          ui,
+	}
+
+	credits.Logger = d2util.NewLogger()
+	credits.Logger.SetLevel(l)
+	credits.Logger.SetPrefix(logPrefix)
+
+	return credits
+}
+
 // Credits represents the credits screen
 type Credits struct {
 	creditsBackground  *d2ui.Sprite
@@ -43,36 +66,21 @@ type Credits struct {
 	renderer  d2interface.Renderer
 	navigator d2interface.Navigator
 	uiManager *d2ui.UIManager
-}
 
-// CreateCredits creates an instance of the credits screen
-func CreateCredits(navigator d2interface.Navigator, asset *d2asset.AssetManager, renderer d2interface.Renderer,
-	ui *d2ui.UIManager) *Credits {
-	result := &Credits{
-		asset:              asset,
-		labels:             make([]*labelItem, 0),
-		cycleTime:          0,
-		doneWithCredits:    false,
-		cyclesTillNextLine: 0,
-		renderer:           renderer,
-		navigator:          navigator,
-		uiManager:          ui,
-	}
-
-	return result
+	*d2util.Logger
 }
 
 // LoadContributors loads the contributors data from file
 func (v *Credits) LoadContributors() []string {
 	file, err := os.Open(path.Join("./", "CONTRIBUTORS"))
 	if err != nil || file == nil {
-		log.Print("CONTRIBUTORS file is missing")
+		v.Warning("CONTRIBUTORS file is missing")
 		return []string{"MISSING CONTRIBUTOR FILES!"}
 	}
 
 	defer func() {
 		if err = file.Close(); err != nil {
-			fmt.Printf("an error occurred while closing file: %s, err: %q\n", file.Name(), err)
+			v.Errorf("an error occurred while closing file: %s, err: %e", file.Name(), err)
 		}
 	}()
 
@@ -92,13 +100,13 @@ func (v *Credits) OnLoad(loading d2screen.LoadingState) {
 
 	v.creditsBackground, err = v.uiManager.NewSprite(d2resource.CreditsBackground, d2resource.PaletteSky)
 	if err != nil {
-		log.Print(err)
+		v.Error(err.Error())
 	}
 
 	v.creditsBackground.SetPosition(creditsX, creditsY)
 	loading.Progress(twentyPercent)
 
-	v.exitButton = v.uiManager.NewButton(d2ui.ButtonTypeMedium, "EXIT")
+	v.exitButton = v.uiManager.NewButton(d2ui.ButtonTypeMedium, v.asset.TranslateLabel(d2enum.ExitLabel))
 	v.exitButton.SetPosition(charSelExitBtnX, charSelExitBtnY)
 	v.exitButton.OnActivated(func() { v.onExitButtonClicked() })
 	loading.Progress(fourtyPercent)
@@ -113,7 +121,7 @@ func (v *Credits) OnLoad(loading d2screen.LoadingState) {
 
 	creditData, err := d2util.Utf16BytesToString(fileData[2:])
 	if err != nil {
-		log.Print(err)
+		v.Error(err.Error())
 	}
 
 	v.creditsText = strings.Split(creditData, "\r\n")
@@ -128,11 +136,8 @@ func (v *Credits) OnLoad(loading d2screen.LoadingState) {
 }
 
 // Render renders the credits screen
-func (v *Credits) Render(screen d2interface.Surface) error {
-	err := v.creditsBackground.RenderSegmented(screen, 4, 3, 0)
-	if err != nil {
-		return err
-	}
+func (v *Credits) Render(screen d2interface.Surface) {
+	v.creditsBackground.RenderSegmented(screen, 4, 3, 0)
 
 	for _, label := range v.labels {
 		if label.Available {
@@ -141,8 +146,6 @@ func (v *Credits) Render(screen d2interface.Surface) error {
 
 		label.Label.Render(screen)
 	}
-
-	return nil
 }
 
 // Advance runs the update logic on the credits screen
@@ -161,11 +164,14 @@ func (v *Credits) Advance(tickTime float64) error {
 				continue
 			}
 
-			if label.Label.Y-1 < -15 {
+			_, y := label.Label.GetPosition()
+
+			if y-1 < -15 {
 				label.Available = true
 				continue
 			}
-			label.Label.Y--
+
+			label.Label.OffsetPosition(0, -1)
 		}
 	}
 
@@ -203,9 +209,9 @@ func (v *Credits) addNextItem() {
 	var label = v.getNewFontLabel(isHeading)
 
 	if isHeading {
-		label.SetText(text[1:])
+		label.SetText(d2ui.ColorTokenize(text[1:], d2ui.ColorTokenRed))
 	} else {
-		label.SetText(text)
+		label.SetText(d2ui.ColorTokenize(text, d2ui.ColorTokenGold))
 	}
 
 	isDoubled, isNextHeading := v.setItemLabelPosition(label, isHeading, isNextHeading, isNextSpace)
@@ -248,7 +254,7 @@ func (v *Credits) setItemLabelPosition(label *d2ui.Label, isHeading, isNextHeadi
 
 		nextHeading = len(v.creditsText) > 0 && len(v.creditsText[0]) > 0 && v.creditsText[0][0] == '*'
 		label2 := v.getNewFontLabel(isHeading)
-		label2.SetText(text2)
+		label2.SetText(d2ui.ColorTokenize(text2, d2ui.ColorTokenGold))
 
 		label2.SetPosition(itemLabelX+itemLabel2offsetX, itemLabelY)
 
@@ -260,37 +266,12 @@ func (v *Credits) setItemLabelPosition(label *d2ui.Label, isHeading, isNextHeadi
 	return isDoubled, isNextHeading
 }
 
-const (
-	lightRed = 0xff5852ff
-	beige    = 0xc6b296ff
-)
-
 func (v *Credits) getNewFontLabel(isHeading bool) *d2ui.Label {
-	for _, label := range v.labels {
-		if label.Available {
-			label.Available = false
-			if isHeading {
-				label.Label.Color[0] = rgbaColor(lightRed)
-			} else {
-				label.Label.Color[0] = rgbaColor(beige)
-			}
-
-			return label.Label
-		}
-	}
-
 	newLabelItem := &labelItem{
 		Available: false,
 		IsHeading: isHeading,
 		Label:     v.uiManager.NewLabel(d2resource.FontFormal10, d2resource.PaletteSky),
 	}
-
-	if isHeading {
-		newLabelItem.Label.Color[0] = rgbaColor(lightRed)
-	} else {
-		newLabelItem.Label.Color[0] = rgbaColor(beige)
-	}
-
 	v.labels = append(v.labels, newLabelItem)
 
 	return newLabelItem.Label

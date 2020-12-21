@@ -23,17 +23,21 @@ type Player struct {
 	LeftSkill         *d2hero.HeroSkill
 	RightSkill        *d2hero.HeroSkill
 	Class             d2enum.Hero
+	Gold              int
 	lastPathSize      int
 	isInTown          bool
 	isRunToggled      bool
 	isRunning         bool
 	isCasting         bool
 	onFinishedCasting func()
+	Act               int
 }
 
 // run speed should be walkspeed * 1.5, since in the original game it is 6 yards walk and 9 yards run.
-const baseWalkSpeed = 6.0
-const baseRunSpeed = 9.0
+const (
+	baseWalkSpeed = 9.0
+	baseRunSpeed  = 13.0
+)
 
 // ID returns the Player uuid
 func (p *Player) ID() string {
@@ -87,12 +91,13 @@ const (
 func (p *Player) Advance(tickTime float64) {
 	p.Step(tickTime)
 
+	if err := p.SetAnimationMode(p.GetAnimationMode()); err != nil {
+		fmt.Printf("failed to set animationMode to: %d, err: %v\n", p.GetAnimationMode(), err)
+	}
+
 	if p.IsCasting() {
 		if p.composite.GetPlayedCount() >= 1 {
 			p.isCasting = false
-			if err := p.SetAnimationMode(p.GetAnimationMode()); err != nil {
-				fmt.Printf("failed to set animationMode to: %d, err: %v\n", p.GetAnimationMode(), err)
-			}
 		}
 
 		// skills are casted after the first half of the casting animation is played

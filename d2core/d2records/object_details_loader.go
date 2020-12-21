@@ -1,8 +1,6 @@
 package d2records
 
 import (
-	"log"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2txt"
 )
 
@@ -13,7 +11,7 @@ func objectDetailsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	i := 0
 
 	for d.Next() {
-		record := &ObjectDetailsRecord{
+		record := &ObjectDetailRecord{
 			Index:       i,
 			Name:        d.String("Name"),
 			Description: d.String("description - not loaded"),
@@ -227,7 +225,7 @@ func objectDetailsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 		return d.Err
 	}
 
-	log.Printf("Loaded %d objects", len(records))
+	r.Debugf("Loaded %d ObjectDetail records", len(records))
 
 	r.Object.Details = records
 
